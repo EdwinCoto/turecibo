@@ -84,6 +84,15 @@ def _format_duplicate_message(existing_receipt: dict) -> str:
     )
 
 
+def _format_missing_dni_message(receipt_id: str) -> str:
+    logger.info("_format_missing_dni_message: receipt_id=%s", receipt_id[:8])
+    return (
+        f"⚠️ No encontré el DNI en el recibo `{receipt_id[:8]}`.\n"
+        "No lo guardaré porque el DNI es obligatorio.\n"
+        "Asegúrate de enviar una foto donde el DNI sea legible."
+    )
+
+
 async def handle_photo_message(message: Message) -> None:
     """
     Entry point called for each Telegram message containing photos.
@@ -113,9 +122,6 @@ async def handle_photo_message(message: Message) -> None:
                 telegram_file_unique_id=photo.file_unique_id,
             )
         )
-        # Save pending record immediately
-        save_receipt(receipt)
-        logger.info("handle_photo_message: pending receipt saved receipt_id=%s", receipt.id)
         # In Azure Functions, fire-and-forget tasks may never complete after the
         # HTTP invocation closes. Await to guarantee extraction runs.
         await _process_receipt(receipt, photo, chat_id)
@@ -161,6 +167,11 @@ async def _process_receipt(receipt: Receipt, photo: PhotoSize, chat_id: int) -> 
         # 2. Extract data via OpenAI vision
         extraction_data = await vision.extract_receipt_data(photo_bytes, receipt.id)
         logger.info("_process_receipt: extraction completed receipt_id=%s", receipt.id)
+
+        if not extraction_data.dni:
+            logger.info("_process_receipt: missing dni; skipping storage receipt_id=%s", receipt.id)
+            await send_message(chat_id, _format_missing_dni_message(receipt.id))
+            return
 
         # 3. Validate DNI if present
         if extraction_data.dni:

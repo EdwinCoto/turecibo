@@ -7,7 +7,11 @@ from handlers.telegram_handler import handle_text_message
 from telegram import Update
 from telegram.ext import ContextTypes
 from services import vision
-from handlers.receipt_handler import _format_duplicate_message, _format_success_message
+from handlers.receipt_handler import (
+    _format_duplicate_message,
+    _format_missing_dni_message,
+    _format_success_message,
+)
 
 
 def make_source(**kwargs) -> ReceiptSource:
@@ -257,3 +261,10 @@ def test_format_duplicate_message_includes_storage_notice():
 
     assert "ya está almacenado" in message
     assert "📅 Fecha: 2026-05-03" in message
+
+
+def test_format_missing_dni_message_mentions_not_saved():
+    message = _format_missing_dni_message("8abaac29-e5a5-42ca-8a6f-375ad5fd6156")
+
+    assert "No encontré el DNI" in message
+    assert "No lo guardaré" in message
