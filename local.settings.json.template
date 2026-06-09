@@ -17,6 +17,11 @@
     "AzureFunctionsJobHost__logging__logLevel__services.telegram_client": "Information",
     "AzureFunctionsJobHost__logging__logLevel__services.vision": "Information",
     "FUNCTION_BASE_URL": "https://<your-ngrok-or-deployed-url>",
-    "LOCAL_STORAGE_PATH": "./data/receipts"
+    "LOCAL_STORAGE_PATH": "./data/receipts",
+    "STORAGE_BACKEND": "local",
+    "AZURE_STORAGE_CONNECTION_STRING": "<optional-when-using-azure-backend>",
+    "AZURE_STORAGE_CONTAINER": "turecibo-receipts",
+    "AZURE_RECEIPTS_PREFIX": "receipts",
+    "AZURE_PHOTOS_PREFIX": "photos"
   }
 }

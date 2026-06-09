@@ -1,5 +1,6 @@
 import logging
 import re
+from io import BytesIO
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -8,6 +9,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from storage.local_store import (
+    get_photo_bytes,
     get_receipt_by_id,
     get_receipts_by_month,
     get_receipts_by_ruc,
@@ -202,11 +204,10 @@ async def cmd_recibo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     photo_path_str: Optional[str] = (receipt.get("photo") or {}).get("local_path")
     if photo_path_str:
-        photo_path = Path(photo_path_str)
-        if photo_path.exists():
+        photo_bytes = get_photo_bytes(photo_path_str)
+        if photo_bytes:
             logger.info("cmd_recibo: sending photo receipt_id=%s", receipt.get("id", "")[:8])
-            with photo_path.open("rb") as f:
-                await update.message.reply_photo(photo=f, caption=caption, parse_mode="Markdown")
+            await update.message.reply_photo(photo=BytesIO(photo_bytes), caption=caption, parse_mode="Markdown")
             return
 
     logger.info("cmd_recibo: sending text-only receipt_id=%s", receipt.get("id", "")[:8])
