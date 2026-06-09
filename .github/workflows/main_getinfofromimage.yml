@@ -13,6 +13,7 @@ on:
 env:
   AZURE_FUNCTIONAPP_PACKAGE_PATH: '.' # set this to the path to your web app project, defaults to the repository root
   PYTHON_VERSION: '3.12' # set this to the python version to use (supports 3.6, 3.7, 3.8)
+  PYTHON_PACKAGE_DIR: '.python_packages/lib/site-packages'
 
 jobs:
   build:
@@ -32,15 +33,22 @@ jobs:
       - name: Create and start virtual environment
         run: |
           python -m venv venv
-          source venv/bin/activate
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install --target="${{ env.PYTHON_PACKAGE_DIR }}" -r requirements.txt
 
       # Optional: Add step to run tests here
 
+      - name: Remove local-only files from deployment package
+        run: |
+          rm -rf venv
+          rm -f local.settings.json
+
       - name: Zip artifact for deployment
-        run: zip release.zip ./* -r
+        run: zip -r release.zip . -x "venv/*" -x ".git/*" -x ".github/*" -x "tests/*" -x "data/*" -x "local.settings.json" -x "__pycache__/*" -x "*.pyc"
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
@@ -80,6 +88,5 @@ jobs:
         id: deploy-to-function
         with:
           app-name: 'getinfofromImage'
-          slot-name: 'Production'
           package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
           
