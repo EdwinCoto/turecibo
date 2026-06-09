@@ -190,6 +190,28 @@ def test_get_receipt_by_fingerprint(tmp_path):
         assert found["receipt_fingerprint"] == "fp-123"
 
 
+def test_get_receipt_by_fingerprint_matches_recomputed_when_stored_is_legacy(tmp_path):
+    with patch.object(local_store, "BASE_PATH", tmp_path):
+        r = Receipt(source=make_source())
+        r.receipt_date = date(2026, 5, 3)
+        r.extraction.data = ExtractionData(
+            restaurant_name="KG BAR S.A.C.",
+            ruc="20613724851",
+            total_amount=106.0,
+            igv_amount=9.63,
+            dni="72804567",
+            dni_valid=True,
+        )
+        r.receipt_fingerprint = "legacy-fingerprint"
+        local_store.save_receipt(r)
+
+        expected = local_store.build_receipt_fingerprint(r.to_json_dict())
+        found = local_store.get_receipt_by_fingerprint(expected)
+
+        assert found is not None
+        assert found["id"] == r.id
+
+
 def test_save_receipt_moves_to_emission_date_directory(tmp_path):
     with patch.object(local_store, "BASE_PATH", tmp_path):
         r = Receipt(source=make_source())

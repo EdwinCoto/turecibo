@@ -479,8 +479,9 @@ def get_receipt_by_fingerprint(fingerprint: str) -> Optional[dict]:
     logger.info("get_receipt_by_fingerprint: fingerprint=%s", fingerprint[:12])
     if _is_azure_backend():
         for receipt in _iter_receipts_azure():
-            existing_fingerprint = receipt.get("receipt_fingerprint") or build_receipt_fingerprint(receipt)
-            if existing_fingerprint == fingerprint:
+            stored_fingerprint = receipt.get("receipt_fingerprint")
+            recomputed_fingerprint = build_receipt_fingerprint(receipt)
+            if fingerprint in {stored_fingerprint, recomputed_fingerprint}:
                 return receipt
         logger.info("get_receipt_by_fingerprint: not found")
         return None
@@ -495,8 +496,9 @@ def get_receipt_by_fingerprint(fingerprint: str) -> Optional[dict]:
         for json_file in day_dir.glob("*.json"):
             try:
                 receipt = load_receipt(json_file)
-                existing_fingerprint = receipt.get("receipt_fingerprint") or build_receipt_fingerprint(receipt)
-                if existing_fingerprint == fingerprint:
+                stored_fingerprint = receipt.get("receipt_fingerprint")
+                recomputed_fingerprint = build_receipt_fingerprint(receipt)
+                if fingerprint in {stored_fingerprint, recomputed_fingerprint}:
                     return receipt
             except Exception:
                 logger.exception("Failed to load receipt file: %s", json_file)
