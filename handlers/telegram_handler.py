@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from openpyxl import Workbook
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -83,6 +84,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "🗓 `/mes YYYY-MM` — recibos de un mes específico (ej: `/mes 2024-03`)\n\n"
         "📅 `/global` — recibos del año actual, ordenados por mes\n"
         "📅 `/global YYYY` — recibos de un año específico (ej: `/global 2026`)\n\n"
+        "📄 `/excel` — exporta recibos del año actual a Excel\n"
+        "📄 `/excel YYYY` — exporta recibos de un año específico a Excel\n\n"
         "🏪 `/restaurante <RUC>` — valida si un restaurante tiene recibos\n"
         "🧾 `/recibo <id>` — detalle completo + foto de un recibo\n"
         "🗑 `/eliminar <id>` — elimina recibo y archivos asociados",
@@ -228,6 +231,89 @@ async def cmd_global(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     for chunk in _chunk_message("\n".join(lines)):
         await update.message.reply_text(chunk, parse_mode="Markdown")
+
+
+def _build_excel(year: int, monthly_data: list[tuple[int, list[dict]]]) -> BytesIO:
+    workbook = Workbook()
+    # Remove default empty sheet.
+    workbook.remove(workbook.active)
+
+    headers = ["RUC", "NOMBRE DEL COMERCIO O RESTAURANTE", "FECHA", "MONTO", "IGV", "DNI"]
+
+    for month_number, receipts in monthly_data:
+        sheet_name = _month_name_es(month_number)[:31]
+        sheet = workbook.create_sheet(title=sheet_name)
+        sheet.append(headers)
+
+        sorted_receipts = sorted(
+            receipts,
+            key=lambda r: r.get("receipt_date") or r.get("created_at", "")[:10],
+        )
+
+        for receipt in sorted_receipts:
+            data = (receipt.get("extraction") or {}).get("data") or {}
+            receipt_date = receipt.get("receipt_date") or receipt.get("created_at", "")[:10]
+            sheet.append(
+                [
+                    data.get("ruc") or "",
+                    data.get("restaurant_name") or "",
+                    receipt_date,
+                    data.get("total_amount") if data.get("total_amount") is not None else "",
+                    data.get("igv_amount") if data.get("igv_amount") is not None else "",
+                    data.get("dni") or "",
+                ]
+            )
+
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return output
+
+
+async def cmd_excel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.info("cmd_excel: received args=%s", context.args)
+    args = context.args
+    now = datetime.now()
+
+    try:
+        if not args:
+            year = now.year
+        elif re.fullmatch(r"\d{4}", args[0]):
+            year = int(args[0])
+            datetime(year, 1, 1)
+        else:
+            raise ValueError("bad format")
+    except (ValueError, IndexError):
+        logger.info("cmd_excel: invalid year format args=%s", args)
+        await update.message.reply_text(
+            "❌ Formato inválido.\n"
+            "Usa: `/excel YYYY`  →  `/excel 2026`\n"
+            "  o: `/excel`       →  usa el año actual",
+            parse_mode="Markdown",
+        )
+        return
+
+    monthly_data: list[tuple[int, list[dict]]] = []
+    total_receipts = 0
+    for month_number in range(1, 13):
+        month_key = f"{year}-{month_number:02d}"
+        receipts = get_receipts_by_month(month_key)
+        if receipts:
+            monthly_data.append((month_number, receipts))
+            total_receipts += len(receipts)
+
+    logger.info("cmd_excel: year=%d months_with_data=%d receipts_found=%d", year, len(monthly_data), total_receipts)
+
+    if total_receipts == 0:
+        await update.message.reply_text(f"📭 No hay recibos registrados para {year}.")
+        return
+
+    excel_file = _build_excel(year, monthly_data)
+    await update.message.reply_document(
+        document=excel_file,
+        filename=f"recibos-{year}.xlsx",
+        caption=f"📄 Exportación completada: {total_receipts} recibos de {year}.",
+    )
 
 
 # ──────────────────────────────────────────

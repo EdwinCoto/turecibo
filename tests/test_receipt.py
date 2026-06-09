@@ -3,7 +3,7 @@ import asyncio
 from typing import cast
 from datetime import date
 from models.receipt import ExtractionData, Receipt, ReceiptSource, ReceiptStatus
-from handlers.telegram_handler import _month_name_es, cmd_delete, cmd_global, handle_text_message
+from handlers.telegram_handler import _month_name_es, cmd_delete, cmd_excel, cmd_global, handle_text_message
 from telegram import Update
 from telegram.ext import ContextTypes
 from services import vision
@@ -294,6 +294,38 @@ def test_cmd_global_rejects_invalid_year_format():
     args, kwargs = reply_text.await_args
     assert "Formato inválido" in args[0]
     assert kwargs.get("parse_mode") == "Markdown"
+
+
+def test_cmd_excel_rejects_invalid_year_format():
+    reply_text = AsyncMock()
+    update = cast(Update, SimpleNamespace(message=SimpleNamespace(reply_text=reply_text)))
+    context = cast(ContextTypes.DEFAULT_TYPE, SimpleNamespace(args=["20ab"]))
+
+    asyncio.run(cmd_excel(update, context))
+
+    reply_text.assert_awaited_once()
+    args, kwargs = reply_text.await_args
+    assert "Formato inválido" in args[0]
+    assert kwargs.get("parse_mode") == "Markdown"
+
+
+def test_cmd_excel_reports_no_data(monkeypatch):
+    reply_text = AsyncMock()
+    reply_document = AsyncMock()
+    update = cast(
+        Update,
+        SimpleNamespace(message=SimpleNamespace(reply_text=reply_text, reply_document=reply_document)),
+    )
+    context = cast(ContextTypes.DEFAULT_TYPE, SimpleNamespace(args=["2026"]))
+
+    monkeypatch.setattr("handlers.telegram_handler.get_receipts_by_month", lambda _month: [])
+
+    asyncio.run(cmd_excel(update, context))
+
+    reply_text.assert_awaited_once()
+    args, _ = reply_text.await_args
+    assert "No hay recibos registrados" in args[0]
+    reply_document.assert_not_called()
 
 
 def test_cmd_delete_requires_receipt_id_argument():
