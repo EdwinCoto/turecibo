@@ -9,6 +9,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from storage.local_store import (
+    delete_receipt_by_id,
     get_photo_bytes,
     get_receipt_by_id,
     get_receipts_by_month,
@@ -63,7 +64,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "📅 `/global` — recibos del año actual, ordenados por mes\n"
         "📅 `/global YYYY` — recibos de un año específico (ej: `/global 2026`)\n\n"
         "🏪 `/restaurante <RUC>` — valida si un restaurante tiene recibos\n"
-        "🧾 `/recibo <id>` — detalle completo + foto de un recibo",
+        "🧾 `/recibo <id>` — detalle completo + foto de un recibo\n"
+        "🗑 `/eliminar <id>` — elimina recibo y archivos asociados",
         parse_mode="Markdown",
     )
 
@@ -269,3 +271,27 @@ async def cmd_recibo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     logger.info("cmd_recibo: sending text-only receipt_id=%s", receipt.get("id", "")[:8])
     await update.message.reply_text(caption, parse_mode="Markdown")
+
+
+async def cmd_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.info("cmd_delete: received args=%s", context.args)
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Proporciona el ID del recibo a eliminar.\nEjemplo: `/eliminar abc12345`",
+            parse_mode="Markdown",
+        )
+        return
+
+    receipt_id = context.args[0].strip()
+    deleted = delete_receipt_by_id(receipt_id)
+    if not deleted:
+        await update.message.reply_text(
+            f"❌ Recibo `{receipt_id}` no encontrado.",
+            parse_mode="Markdown",
+        )
+        return
+
+    await update.message.reply_text(
+        f"✅ Recibo `{receipt_id}` eliminado con sus archivos relacionados.",
+        parse_mode="Markdown",
+    )

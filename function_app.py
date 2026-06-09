@@ -8,6 +8,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from handlers.receipt_handler import handle_photo_message
 from handlers.telegram_handler import (
+    cmd_delete,
     cmd_global,
     cmd_help,
     cmd_mes,
@@ -111,6 +112,7 @@ _application.add_handler(CommandHandler("mes", cmd_mes))
 _application.add_handler(CommandHandler("global", cmd_global))
 _application.add_handler(CommandHandler("restaurante", cmd_restaurante))
 _application.add_handler(CommandHandler("recibo", cmd_recibo))
+_application.add_handler(CommandHandler("eliminar", cmd_delete))
 
 # Register photo handler — fires for messages that contain photos
 _application.add_handler(

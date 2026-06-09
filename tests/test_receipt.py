@@ -3,7 +3,7 @@ import asyncio
 from typing import cast
 from datetime import date
 from models.receipt import ExtractionData, Receipt, ReceiptSource, ReceiptStatus
-from handlers.telegram_handler import cmd_global, handle_text_message
+from handlers.telegram_handler import cmd_delete, cmd_global, handle_text_message
 from telegram import Update
 from telegram.ext import ContextTypes
 from services import vision
@@ -211,6 +211,31 @@ def test_save_receipt_moves_to_emission_date_directory(tmp_path):
         assert r.photo.content_hash is None
 
 
+def test_delete_receipt_by_id_removes_json_and_photo(tmp_path):
+    with patch.object(local_store, "BASE_PATH", tmp_path):
+        r = Receipt(source=make_source())
+        photo_path = local_store.save_photo(r.id, r.created_at.strftime("%Y-%m-%d"), b"photo-bytes")
+        r.photo = __import__("models.receipt", fromlist=["ReceiptPhoto"]).ReceiptPhoto(
+            local_path=str(photo_path),
+            size_bytes=len(b"photo-bytes"),
+        )
+        json_path = local_store.save_receipt(r)
+
+        assert json_path.exists()
+        assert Path(r.photo.local_path).exists()
+
+        deleted = local_store.delete_receipt_by_id(r.id[:8])
+
+        assert deleted is True
+        assert not json_path.exists()
+        assert not Path(r.photo.local_path).exists()
+
+
+def test_delete_receipt_by_id_returns_false_when_not_found(tmp_path):
+    with patch.object(local_store, "BASE_PATH", tmp_path):
+        assert local_store.delete_receipt_by_id("nope1234") is False
+
+
 def test_normalize_emission_date_value_from_common_formats():
     assert vision._normalize_emission_date_value("08/06/2026") == date(2026, 6, 8)
     assert vision._normalize_emission_date_value("2026-06-08") == date(2026, 6, 8)
@@ -246,6 +271,34 @@ def test_cmd_global_rejects_invalid_year_format():
     reply_text.assert_awaited_once()
     args, kwargs = reply_text.await_args
     assert "Formato inválido" in args[0]
+    assert kwargs.get("parse_mode") == "Markdown"
+
+
+def test_cmd_delete_requires_receipt_id_argument():
+    reply_text = AsyncMock()
+    update = cast(Update, SimpleNamespace(message=SimpleNamespace(reply_text=reply_text)))
+    context = cast(ContextTypes.DEFAULT_TYPE, SimpleNamespace(args=[]))
+
+    asyncio.run(cmd_delete(update, context))
+
+    reply_text.assert_awaited_once()
+    args, kwargs = reply_text.await_args
+    assert "Proporciona el ID" in args[0]
+    assert kwargs.get("parse_mode") == "Markdown"
+
+
+def test_cmd_delete_reports_not_found(monkeypatch):
+    reply_text = AsyncMock()
+    update = cast(Update, SimpleNamespace(message=SimpleNamespace(reply_text=reply_text)))
+    context = cast(ContextTypes.DEFAULT_TYPE, SimpleNamespace(args=["abc12345"]))
+
+    monkeypatch.setattr("handlers.telegram_handler.delete_receipt_by_id", lambda _rid: False)
+
+    asyncio.run(cmd_delete(update, context))
+
+    reply_text.assert_awaited_once()
+    args, kwargs = reply_text.await_args
+    assert "no encontrado" in args[0]
     assert kwargs.get("parse_mode") == "Markdown"
 
 

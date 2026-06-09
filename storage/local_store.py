@@ -5,6 +5,7 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from models.receipt import Receipt
 
@@ -52,11 +53,29 @@ def _to_azure_uri(container: str, blob_name: str) -> str:
 
 
 def _parse_azure_uri(uri: str) -> tuple[str, str] | None:
-    if not uri.startswith("azure://"):
+    normalized_uri = uri
+    # Compat: Path("azure://...") serializes as "azure:/..." on POSIX.
+    if normalized_uri.startswith("azure:/") and not normalized_uri.startswith("azure://"):
+        normalized_uri = normalized_uri.replace("azure:/", "azure://", 1)
+
+    if not normalized_uri.startswith("azure://"):
         return None
-    payload = uri[len("azure://"):]
+    payload = normalized_uri[len("azure://"):]
     parts = payload.split("/", 1)
     if len(parts) != 2 or not parts[0] or not parts[1]:
+        return None
+    return parts[0], parts[1]
+
+
+def _parse_blob_url(url: str) -> tuple[str, str] | None:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        return None
+    path = parsed.path.lstrip("/")
+    if not path:
+        return None
+    parts = path.split("/", 1)
+    if len(parts) != 2:
         return None
     return parts[0], parts[1]
 
@@ -525,3 +544,59 @@ def get_photo_bytes(photo_path: str) -> bytes | None:
     if not path.exists():
         return None
     return path.read_bytes()
+
+
+def _delete_blob_if_exists(container_name: str, blob_name: str) -> None:
+    blob_client = _get_blob_service_client().get_blob_client(container_name, blob_name)
+    blob_client.delete_blob(delete_snapshots="include")
+
+
+def _delete_photo_reference(photo_path: str | None) -> None:
+    if not photo_path:
+        return
+
+    parsed_azure = _parse_azure_uri(photo_path)
+    if parsed_azure is not None:
+        container_name, blob_name = parsed_azure
+        _delete_blob_if_exists(container_name, blob_name)
+        return
+
+    parsed_url = _parse_blob_url(photo_path)
+    if parsed_url is not None and _is_azure_backend():
+        container_name, blob_name = parsed_url
+        _delete_blob_if_exists(container_name, blob_name)
+        return
+
+    photo_file = Path(photo_path)
+    if photo_file.exists():
+        photo_file.unlink()
+
+
+def delete_receipt_by_id(receipt_id: str) -> bool:
+    """Delete receipt JSON and linked photo by full ID or 8-char prefix."""
+    logger.info("delete_receipt_by_id: receipt_id=%s", receipt_id)
+    receipt = get_receipt_by_id(receipt_id)
+    if receipt is None:
+        logger.info("delete_receipt_by_id: receipt not found")
+        return False
+
+    full_receipt_id = receipt.get("id")
+    if not full_receipt_id:
+        logger.warning("delete_receipt_by_id: receipt has no id")
+        return False
+
+    photo_path = (receipt.get("photo") or {}).get("local_path")
+    _delete_photo_reference(photo_path)
+
+    if _is_azure_backend():
+        receipt_blob_name = _find_existing_receipt_blob_name(full_receipt_id)
+        if receipt_blob_name:
+            _get_container_client().delete_blob(receipt_blob_name)
+        logger.info("delete_receipt_by_id: deleted from azure receipt_id=%s", full_receipt_id)
+        return True
+
+    receipt_file = _find_existing_receipt_file(full_receipt_id)
+    if receipt_file and receipt_file.exists():
+        receipt_file.unlink()
+    logger.info("delete_receipt_by_id: deleted from local receipt_id=%s", full_receipt_id)
+    return True
