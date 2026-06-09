@@ -9,6 +9,7 @@ from typing import Optional
 from openai import AsyncOpenAI
 
 from models.receipt import ExtractionData
+from services import ruc_validator
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,15 @@ _DNI_FIELD_ALIASES = (
     "documento de identidad",
     "nro_documento",
     "numero_documento",
+)
+_RUC_FIELD_ALIASES = (
+    "ruc",
+    "r.u.c",
+    "r.u.c.",
+    "ruc n",
+    "ruc n°",
+    "nro ruc",
+    "numero ruc",
 )
 
 
@@ -94,7 +104,7 @@ Analiza la imagen y extrae los siguientes campos en formato JSON estricto:
   "igv_amount": <monto IGV como número decimal o null>,
   "igv_rate": <tasa IGV como decimal, ej: 0.18, o null>,
   "currency": "<moneda, usualmente PEN>",
-  "dni": "<DNI de 8 dígitos del cliente o null>"
+    "dni": "<DNI de 8 dígitos del cliente o null>",
     "emission_date": "<fecha de emisión del recibo en formato YYYY-MM-DD o null>"
 }
 
@@ -103,8 +113,10 @@ Reglas:
 - Si un campo no está visible en la imagen, usa null.
 - total_amount y igv_amount deben ser números con 2 decimales.
 - Si el IGV no es visible pero el total sí, calcula igv_amount = round(total * (0.18 / 1.18), 2).
-- El RUC debe ser exactamente 11 dígitos numéricos
-- Para extraer el RUC , considera SOLO  etiquetas como "R.U.C", "RUC", "RUC:", "R.U.C." o variantes similares en el recibo .
+- El RUC debe ser exactamente 11 dígitos numéricos.
+- Para extraer el RUC, considera SOLO etiquetas como "R.U.C", "RUC", "RUC:", "R.U.C.", "RUC N°", "Nro RUC" o variantes similares.
+- No uses números de operación, ticket, autorización, serie, transacción o referencia como RUC.
+- Si el valor de RUC es ambiguo o no es confiable, devuelve null.
 - El DNI debe ser exactamente 8 dígitos numéricos
 - Para extraer el DNI, considera SOLO etiquetas equivalentes como "DOCUMENTO", "D.N.I", "DNI", "DOC.", "DOCUMENTO DE IDENTIDAD" o variantes similares en el recibo.
 - La fecha de emisión puede aparecer como "FECHA DE EMISION", "FECHA EMISION", "FECHA" o dentro de un bloque de datos del recibo.
@@ -127,6 +139,17 @@ def _normalize_dni_value(value: object) -> str | None:
         return match.group(1) if match else None
 
     return None
+
+
+def _normalize_ruc_value(value: object) -> str | None:
+    logger.info("_normalize_ruc_value: start value_type=%s", type(value).__name__)
+    normalized = ruc_validator.normalize_ruc_value(value)
+    if not normalized:
+        return None
+    if not ruc_validator.is_valid_format(normalized):
+        logger.info("_normalize_ruc_value: invalid normalized ruc=%s", normalized)
+        return None
+    return normalized
 
 
 def _normalize_emission_date_value(value: object) -> date | None:
@@ -171,6 +194,14 @@ def _normalize_extraction_payload(parsed: dict) -> dict:
         str(key).strip().lower(): value
         for key, value in normalized.items()
     }
+
+    if normalized.get("ruc") is None:
+        for field_name in _RUC_FIELD_ALIASES:
+            if field_name in alias_lookup:
+                normalized["ruc"] = alias_lookup[field_name]
+                break
+
+    normalized["ruc"] = _normalize_ruc_value(normalized.get("ruc"))
 
     if normalized.get("dni") is None:
         for field_name in _DNI_FIELD_ALIASES:

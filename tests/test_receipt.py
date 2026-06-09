@@ -84,10 +84,11 @@ def test_validate_dni_uses_local_format_only(dni, expected):
 
 @pytest.mark.parametrize("ruc,expected", [
     ("20613724851", True),
-    ("00000000000", True),
+    ("20425476115", True),
     ("2061372485", False),
     ("206137248512", False),
     ("2061372485A", False),
+    ("00000000000", False),
     ("", False),
 ])
 def test_ruc_format(ruc, expected):
@@ -96,8 +97,9 @@ def test_ruc_format(ruc, expected):
 
 @pytest.mark.parametrize("ruc,expected", [
     ("20613724851", True),
-    ("00000000000", True),
+    ("20425476115", True),
     ("2061372485", False),
+    ("00000000000", False),
     ("abc", False),
 ])
 def test_validate_ruc_uses_local_format_only(ruc, expected):

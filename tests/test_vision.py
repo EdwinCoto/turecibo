@@ -56,3 +56,23 @@ def test_normalize_extraction_payload_maps_dotted_dni_key():
 def test_normalize_dni_value_rejects_non_eight_digit_values():
     assert vision._normalize_dni_value("DOC 1234567") is None
     assert vision._normalize_dni_value("DOC 123456789") is None
+
+
+def test_normalize_extraction_payload_maps_dotted_ruc_key():
+    payload = {
+        "R.U.C.": "20613724851",
+    }
+
+    normalized = vision._normalize_extraction_payload(payload)
+
+    assert normalized["ruc"] == "20613724851"
+
+
+def test_normalize_extraction_payload_rejects_invalid_ruc():
+    payload = {
+        "ruc": "00000000000",
+    }
+
+    normalized = vision._normalize_extraction_payload(payload)
+
+    assert normalized["ruc"] is None
