@@ -5,6 +5,8 @@
     "FUNCTIONS_WORKER_RUNTIME": "python",
     "TELEGRAM_BOT_TOKEN": "<your-bot-token-from-botfather>",
     "TELEGRAM_WEBHOOK_SECRET": "<random-secret-string>",
+    "TELEGRAM_ALLOWED_USER_IDS": "<comma-separated-user-ids>",
+    "TELEGRAM_ALLOWED_CHAT_IDS": "<comma-separated-chat-ids>",
     "OPENAI_API_KEY": "<your-openai-key-or-github-models-token>",
     "OPENAI_MODEL": "openai/gpt-4.1",
     "AzureFunctionsJobHost__logging__console__isEnabled": "true",

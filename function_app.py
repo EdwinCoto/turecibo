@@ -26,6 +26,44 @@ logging.getLogger().setLevel(logging.INFO)
 _TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 _WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
 
+
+def _parse_int_set(raw_value: str | None) -> set[int]:
+    if not raw_value:
+        return set()
+
+    values: set[int] = set()
+    for token in raw_value.split(","):
+        item = token.strip()
+        if not item:
+            continue
+        try:
+            values.add(int(item))
+        except ValueError:
+            logger.warning("Ignoring invalid allowlist id: %s", item)
+    return values
+
+
+_ALLOWED_USER_IDS = _parse_int_set(os.environ.get("TELEGRAM_ALLOWED_USER_IDS"))
+_ALLOWED_CHAT_IDS = _parse_int_set(os.environ.get("TELEGRAM_ALLOWED_CHAT_IDS"))
+
+
+def _is_update_allowed(update: Update) -> bool:
+    # If no allowlist configured, keep current behavior (allow all).
+    if not _ALLOWED_USER_IDS and not _ALLOWED_CHAT_IDS:
+        return True
+
+    message = update.effective_message
+    chat = update.effective_chat
+    user = update.effective_user
+
+    if user and _ALLOWED_USER_IDS and user.id in _ALLOWED_USER_IDS:
+        return True
+
+    if chat and _ALLOWED_CHAT_IDS and chat.id in _ALLOWED_CHAT_IDS:
+        return True
+
+    return False
+
 _application: Application = (
     Application.builder()
     .token(_TELEGRAM_TOKEN)
@@ -93,6 +131,14 @@ async def telegram_webhook(req: func.HttpRequest) -> func.HttpResponse:
 
     update = Update.de_json(body, _application.bot)
     logger.info("telegram_webhook: parsed update")
+
+    if not _is_update_allowed(update):
+        logger.warning(
+            "telegram_webhook: blocked update by allowlist user_id=%s chat_id=%s",
+            update.effective_user.id if update.effective_user else None,
+            update.effective_chat.id if update.effective_chat else None,
+        )
+        return func.HttpResponse(status_code=200)
 
     # Initialize application if not already done (first warm start)
     if not _application_initialized:
