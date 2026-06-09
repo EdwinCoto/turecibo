@@ -32,6 +32,7 @@ _application: Application = (
     .updater(None)          # webhook mode — no built-in polling
     .build()
 )
+_application_initialized = False
 
 logger.info("Function app module initialized; INFO logging enabled")
 
@@ -42,6 +43,13 @@ async def _handle_photo_update(update: Update) -> None:
         logger.info("_handle_photo_update: skipped because update has no message")
         return
     await handle_photo_message(update.message)
+
+
+async def _process_update_safe(update: Update) -> None:
+    try:
+        await _application.process_update(update)
+    except Exception:
+        logger.exception("_process_update_safe: failed to process Telegram update")
 
 # Register command handlers
 _application.add_handler(CommandHandler("start", cmd_start))
@@ -67,6 +75,7 @@ app = func.FunctionApp()
 
 @app.route(route="telegram/webhook", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 async def telegram_webhook(req: func.HttpRequest) -> func.HttpResponse:
+    global _application_initialized
     logger.info("telegram_webhook: received request")
 
     # Validate Telegram secret token
@@ -74,10 +83,7 @@ async def telegram_webhook(req: func.HttpRequest) -> func.HttpResponse:
         logger.warning("Unauthorized webhook request — secret mismatch")
         return func.HttpResponse("Unauthorized", status_code=401)
 
-    try:
-        body = req.get_json()
-    except ValueError:
-        body = None
+    body = req.get_json(silent=True)
     if not body:
         logger.info("telegram_webhook: invalid or empty body")
         return func.HttpResponse("Bad request", status_code=400)
@@ -86,13 +92,15 @@ async def telegram_webhook(req: func.HttpRequest) -> func.HttpResponse:
     logger.info("telegram_webhook: parsed update")
 
     # Initialize application if not already done (first warm start)
-    if not _application.running:
+    if not _application_initialized:
         logger.info("telegram_webhook: initializing telegram application")
         await _application.initialize()
+        await _application.start()
+        _application_initialized = True
         logger.info("telegram_webhook: telegram application initialized")
 
     # Fire-and-forget: process update in background so we ACK Telegram immediately
-    asyncio.ensure_future(_application.process_update(update))
+    asyncio.ensure_future(_process_update_safe(update))
     logger.info("telegram_webhook: update scheduled for background processing")
 
     return func.HttpResponse(status_code=200)

@@ -10,7 +10,15 @@ from models.receipt import Receipt
 
 logger = logging.getLogger(__name__)
 
-BASE_PATH = Path(os.environ.get("LOCAL_STORAGE_PATH", "./data/receipts"))
+
+def _default_storage_path() -> str:
+    # Azure Functions zip deployments run from a read-only wwwroot; use /tmp unless overridden.
+    if os.environ.get("WEBSITE_INSTANCE_ID"):
+        return "/tmp/turecibo/receipts"
+    return "./data/receipts"
+
+
+BASE_PATH = Path(os.environ.get("LOCAL_STORAGE_PATH", _default_storage_path()))
 
 
 def _receipt_dir(date_str: str) -> Path:
