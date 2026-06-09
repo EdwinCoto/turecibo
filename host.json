@@ -5,7 +5,7 @@
       "isEnabled": true
     },
     "logLevel": {
-      "default": "Warning",
+      "default": "Information",
       "Worker": "Warning",
       "Host": "Warning",
       "Microsoft": "Warning",
