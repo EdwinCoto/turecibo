@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 from services import vision
 from handlers.receipt_handler import (
     _format_duplicate_message,
+    _format_invalid_ruc_message,
     _format_missing_dni_message,
     _format_success_message,
 )
@@ -55,6 +56,8 @@ def test_extraction_data_accepts_emission_date():
 # ──────────────────────────────────────────
 
 from services.dni_validator import is_valid_format, validate_dni
+from services.ruc_validator import is_valid_format as is_valid_ruc_format
+from services.ruc_validator import validate_ruc
 
 
 @pytest.mark.parametrize("dni,expected", [
@@ -77,6 +80,28 @@ def test_dni_format(dni, expected):
 ])
 def test_validate_dni_uses_local_format_only(dni, expected):
     assert asyncio.run(validate_dni(dni)) is expected
+
+
+@pytest.mark.parametrize("ruc,expected", [
+    ("20613724851", True),
+    ("00000000000", True),
+    ("2061372485", False),
+    ("206137248512", False),
+    ("2061372485A", False),
+    ("", False),
+])
+def test_ruc_format(ruc, expected):
+    assert is_valid_ruc_format(ruc) == expected
+
+
+@pytest.mark.parametrize("ruc,expected", [
+    ("20613724851", True),
+    ("00000000000", True),
+    ("2061372485", False),
+    ("abc", False),
+])
+def test_validate_ruc_uses_local_format_only(ruc, expected):
+    assert asyncio.run(validate_ruc(ruc)) is expected
 
 
 # ──────────────────────────────────────────
@@ -387,6 +412,13 @@ def test_format_missing_dni_message_mentions_not_saved():
     message = _format_missing_dni_message("8abaac29-e5a5-42ca-8a6f-375ad5fd6156")
 
     assert "No encontré el DNI" in message
+    assert "No lo guardaré" in message
+
+
+def test_format_invalid_ruc_message_mentions_not_saved():
+    message = _format_invalid_ruc_message("8abaac29-e5a5-42ca-8a6f-375ad5fd6156")
+
+    assert "RUC" in message
     assert "No lo guardaré" in message
 
 

@@ -14,7 +14,7 @@ from models.receipt import (
     ReceiptSource,
     ReceiptStatus,
 )
-from services import dni_validator, vision
+from services import dni_validator, ruc_validator, vision
 from services.telegram_client import get_bot, send_message
 from storage.local_store import (
     build_receipt_fingerprint,
@@ -93,6 +93,15 @@ def _format_missing_dni_message(receipt_id: str) -> str:
     )
 
 
+def _format_invalid_ruc_message(receipt_id: str) -> str:
+    logger.info("_format_invalid_ruc_message: receipt_id=%s", receipt_id[:8])
+    return (
+        f"⚠️ El RUC del recibo `{receipt_id[:8]}` está ausente o es inválido.\n"
+        "No lo guardaré porque el RUC debe tener 11 dígitos.\n"
+        "Asegúrate de enviar una foto donde el RUC sea legible."
+    )
+
+
 async def handle_photo_message(message: Message) -> None:
     """
     Entry point called for each Telegram message containing photos.
@@ -167,6 +176,11 @@ async def _process_receipt(receipt: Receipt, photo: PhotoSize, chat_id: int) -> 
         # 2. Extract data via OpenAI vision
         extraction_data = await vision.extract_receipt_data(photo_bytes, receipt.id)
         logger.info("_process_receipt: extraction completed receipt_id=%s", receipt.id)
+
+        if not extraction_data.ruc or not await ruc_validator.validate_ruc(extraction_data.ruc):
+            logger.info("_process_receipt: invalid or missing ruc; skipping storage receipt_id=%s", receipt.id)
+            await send_message(chat_id, _format_invalid_ruc_message(receipt.id))
+            return
 
         if not extraction_data.dni:
             logger.info("_process_receipt: missing dni; skipping storage receipt_id=%s", receipt.id)
