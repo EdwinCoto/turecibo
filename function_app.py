@@ -15,6 +15,7 @@ from handlers.telegram_handler import (
     cmd_start,
     handle_text_message,
 )
+from services.telegram_client import send_message
 
 logger = logging.getLogger(__name__)
 logging.getLogger().setLevel(logging.INFO)
@@ -89,6 +90,19 @@ async def _process_update_safe(update: Update) -> None:
     except Exception:
         logger.exception("_process_update_safe: failed to process Telegram update")
 
+
+async def _notify_blocked_update(update: Update) -> None:
+    chat = update.effective_chat
+    if chat is None:
+        logger.info("_notify_blocked_update: skipped because update has no chat")
+        return
+
+    await send_message(
+        chat.id,
+        "No tienes permiso para usar este bot.",
+        parse_mode=None,
+    )
+
 # Register command handlers
 _application.add_handler(CommandHandler("start", cmd_start))
 _application.add_handler(CommandHandler("help", cmd_help))
@@ -138,6 +152,7 @@ async def telegram_webhook(req: func.HttpRequest) -> func.HttpResponse:
             update.effective_user.id if update.effective_user else None,
             update.effective_chat.id if update.effective_chat else None,
         )
+        await _notify_blocked_update(update)
         return func.HttpResponse(status_code=200)
 
     # Initialize application if not already done (first warm start)
