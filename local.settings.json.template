@@ -1,0 +1,22 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "TELEGRAM_BOT_TOKEN": "<your-bot-token-from-botfather>",
+    "TELEGRAM_WEBHOOK_SECRET": "<random-secret-string>",
+    "OPENAI_API_KEY": "<your-openai-key-or-github-models-token>",
+    "OPENAI_MODEL": "openai/gpt-4.1",
+    "AzureFunctionsJobHost__logging__console__isEnabled": "true",
+    "AzureFunctionsJobHost__logging__logLevel__default": "Warning",
+    "AzureFunctionsJobHost__logging__logLevel__Worker": "Warning",
+    "AzureFunctionsJobHost__logging__logLevel__Host": "Warning",
+    "AzureFunctionsJobHost__logging__logLevel__Microsoft": "Warning",
+    "AzureFunctionsJobHost__logging__logLevel__function_app": "Information",
+    "AzureFunctionsJobHost__logging__logLevel__handlers.receipt_handler": "Information",
+    "AzureFunctionsJobHost__logging__logLevel__services.telegram_client": "Information",
+    "AzureFunctionsJobHost__logging__logLevel__services.vision": "Information",
+    "FUNCTION_BASE_URL": "https://<your-ngrok-or-deployed-url>",
+    "LOCAL_STORAGE_PATH": "./data/receipts"
+  }
+}

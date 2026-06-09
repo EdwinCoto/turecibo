@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Azure Functions
+local.settings.json
+.python_packages/
+.funcignore
+
+# Data (local receipts storage — never commit user data)
+data/
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

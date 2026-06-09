@@ -1,0 +1,259 @@
+import pytest
+import asyncio
+from typing import cast
+from datetime import date
+from models.receipt import ExtractionData, Receipt, ReceiptSource, ReceiptStatus
+from handlers.telegram_handler import handle_text_message
+from telegram import Update
+from telegram.ext import ContextTypes
+from services import vision
+from handlers.receipt_handler import _format_duplicate_message, _format_success_message
+
+
+def make_source(**kwargs) -> ReceiptSource:
+    defaults = dict(
+        telegram_user_id=1,
+        telegram_chat_id=1,
+        telegram_message_id=1,
+        telegram_file_id="abc",
+        telegram_file_unique_id=None,
+    )
+    return ReceiptSource(**{**defaults, **kwargs})
+
+
+def test_receipt_defaults():
+    r = Receipt(source=make_source())
+    assert r.status == ReceiptStatus.PENDING
+    assert r.id
+    assert r.extraction.data is None
+
+
+def test_receipt_json_round_trip():
+    r = Receipt(source=make_source())
+    data = r.to_json_dict()
+    assert data["status"] == "pending"
+    assert data["extraction"]["status"] == "pending"
+
+
+def test_extraction_data_igv_defaults():
+    d = ExtractionData(total_amount=59.0, igv_amount=9.0)
+    assert d.igv_rate == 0.18
+    assert d.currency == "PEN"
+
+
+def test_extraction_data_accepts_emission_date():
+    d = ExtractionData(emission_date=date(2026, 6, 8))
+    assert d.emission_date == date(2026, 6, 8)
+
+
+# ──────────────────────────────────────────
+# DNI validator (sync format checks only)
+# ──────────────────────────────────────────
+
+from services.dni_validator import is_valid_format, validate_dni
+
+
+@pytest.mark.parametrize("dni,expected", [
+    ("12345678", True),
+    ("00000000", True),
+    ("1234567",  False),  # 7 digits
+    ("123456789", False), # 9 digits
+    ("1234567a",  False), # non-numeric
+    ("",          False),
+])
+def test_dni_format(dni, expected):
+    assert is_valid_format(dni) == expected
+
+
+@pytest.mark.parametrize("dni,expected", [
+    ("12345678", True),
+    ("00000000", True),
+    ("1234567", False),
+    ("abc", False),
+])
+def test_validate_dni_uses_local_format_only(dni, expected):
+    assert asyncio.run(validate_dni(dni)) is expected
+
+
+# ──────────────────────────────────────────
+# Storage helpers
+# ──────────────────────────────────────────
+
+import json
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+from unittest.mock import AsyncMock
+from types import SimpleNamespace
+
+from storage import local_store
+
+
+def test_save_and_load_receipt(tmp_path):
+    with patch.object(local_store, "BASE_PATH", tmp_path):
+        r = Receipt(source=make_source())
+        path = local_store.save_receipt(r)
+        assert path.exists()
+        loaded = json.loads(path.read_text())
+        assert loaded["id"] == r.id
+
+
+def test_get_receipts_by_month_empty(tmp_path):
+    with patch.object(local_store, "BASE_PATH", tmp_path):
+        result = local_store.get_receipts_by_month("2024-01")
+        assert result == []
+
+
+def test_get_receipts_by_month(tmp_path):
+    with patch.object(local_store, "BASE_PATH", tmp_path):
+        r = Receipt(source=make_source())
+        local_store.save_receipt(r)
+        month = r.created_at.strftime("%Y-%m")
+        results = local_store.get_receipts_by_month(month)
+        assert len(results) == 1
+        assert results[0]["id"] == r.id
+
+
+def test_get_receipt_by_id(tmp_path):
+    with patch.object(local_store, "BASE_PATH", tmp_path):
+        r = Receipt(source=make_source())
+        local_store.save_receipt(r)
+        found = local_store.get_receipt_by_id(r.id[:8])
+        assert found is not None
+        assert found["id"] == r.id
+
+
+def test_get_receipt_by_telegram_file_id(tmp_path):
+    with patch.object(local_store, "BASE_PATH", tmp_path):
+        r = Receipt(source=make_source(telegram_file_id="file-123"))
+        local_store.save_receipt(r)
+        found = local_store.get_receipt_by_telegram_file_id("file-123")
+        assert found is not None
+        assert found["source"]["telegram_file_id"] == "file-123"
+
+
+def test_get_receipt_by_telegram_photo_identity_prefers_unique_id(tmp_path):
+    with patch.object(local_store, "BASE_PATH", tmp_path):
+        r = Receipt(source=make_source(telegram_file_id="file-123", telegram_file_unique_id="unique-abc"))
+        local_store.save_receipt(r)
+        found = local_store.get_receipt_by_telegram_photo_identity("unique-abc", "file-999")
+        assert found is not None
+        assert found["source"]["telegram_file_unique_id"] == "unique-abc"
+
+
+def test_get_receipt_by_photo_hash(tmp_path):
+    with patch.object(local_store, "BASE_PATH", tmp_path):
+        r = Receipt(source=make_source())
+        r.photo = __import__("models.receipt", fromlist=["ReceiptPhoto"]).ReceiptPhoto(
+            local_path=str(tmp_path / "dummy.jpg"),
+            size_bytes=11,
+            content_hash="abc123",
+        )
+        local_store.save_receipt(r)
+        found = local_store.get_receipt_by_photo_hash("abc123")
+        assert found is not None
+        assert found["photo"]["content_hash"] == "abc123"
+
+
+def test_build_receipt_fingerprint_is_stable(tmp_path):
+    receipt = {
+        "created_at": "2026-06-08T00:00:00Z",
+        "receipt_date": "2026-06-08",
+        "extraction": {
+            "data": {
+                "restaurant_name": "Pardos Chicken",
+                "ruc": "20425476115",
+                "total_amount": 108.40,
+                "igv_amount": 15.24,
+                "currency": "PEN",
+                "dni": "72804567",
+            }
+        },
+    }
+    fingerprint_1 = local_store.build_receipt_fingerprint(receipt)
+    fingerprint_2 = local_store.build_receipt_fingerprint(receipt)
+    assert fingerprint_1 == fingerprint_2
+
+
+def test_get_receipt_by_fingerprint(tmp_path):
+    with patch.object(local_store, "BASE_PATH", tmp_path):
+        r = Receipt(source=make_source())
+        r.receipt_date = date(2026, 6, 8)
+        r.receipt_fingerprint = "fp-123"
+        local_store.save_receipt(r)
+        found = local_store.get_receipt_by_fingerprint("fp-123")
+        assert found is not None
+        assert found["receipt_fingerprint"] == "fp-123"
+
+
+def test_save_receipt_moves_to_emission_date_directory(tmp_path):
+    with patch.object(local_store, "BASE_PATH", tmp_path):
+        r = Receipt(source=make_source())
+        first_path = local_store.save_receipt(r)
+        photo_path = local_store.save_photo(r.id, r.created_at.strftime("%Y-%m-%d"), b"photo-bytes")
+        r.photo = __import__("models.receipt", fromlist=["ReceiptPhoto"]).ReceiptPhoto(
+            local_path=str(photo_path),
+            size_bytes=len(b"photo-bytes"),
+        )
+        r.receipt_date = date(2026, 6, 8)
+
+        second_path = local_store.save_receipt(r)
+
+        assert first_path.parent.name == r.created_at.strftime("%Y-%m-%d")
+        assert second_path.parent.name == "2026-06-08"
+        assert second_path.exists()
+        assert r.photo is not None
+        assert r.photo.local_path.endswith("2026-06-08/%s.jpg" % r.id)
+        assert r.photo.content_hash is None
+
+
+def test_normalize_emission_date_value_from_common_formats():
+    assert vision._normalize_emission_date_value("08/06/2026") == date(2026, 6, 8)
+    assert vision._normalize_emission_date_value("2026-06-08") == date(2026, 6, 8)
+
+
+def test_normalize_extraction_payload_maps_fecha_emision_to_emission_date():
+    payload = {"FECHA DE EMISION": "08/06/2026"}
+
+    normalized = vision._normalize_extraction_payload(payload)
+
+    assert normalized["emission_date"] == date(2026, 6, 8)
+
+
+def test_handle_text_message_prompts_for_photo():
+    reply_text = AsyncMock()
+    update = cast(Update, SimpleNamespace(message=SimpleNamespace(reply_text=reply_text)))
+    context = cast(ContextTypes.DEFAULT_TYPE, SimpleNamespace())
+
+    asyncio.run(handle_text_message(update, context))
+
+    reply_text.assert_awaited_once_with(
+        "📸 Envíame una foto de tu boleta para poder procesarla.",
+    )
+
+
+def test_format_success_message_includes_receipt_date():
+    receipt = Receipt(source=make_source())
+    receipt.receipt_date = date(2026, 6, 8)
+    extraction = ExtractionData(
+        restaurant_name="Demo",
+        ruc="20123456789",
+        total_amount=10.0,
+        igv_amount=1.8,
+        dni="12345678",
+        dni_valid=True,
+    )
+
+    message = _format_success_message(receipt, extraction)
+
+    assert "📅 Fecha: 2026-06-08" in message
+
+
+def test_format_duplicate_message_includes_storage_notice():
+    message = _format_duplicate_message({
+        "id": "8abaac29-e5a5-42ca-8a6f-375ad5fd6156",
+        "receipt_date": "2026-05-03",
+    })
+
+    assert "ya está almacenado" in message
+    assert "📅 Fecha: 2026-05-03" in message

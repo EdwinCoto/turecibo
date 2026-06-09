@@ -1,0 +1,37 @@
+{
+  "version": "2.0",
+  "logging": {
+    "console": {
+      "isEnabled": true
+    },
+    "logLevel": {
+      "default": "Warning",
+      "Worker": "Warning",
+      "Host": "Warning",
+      "Microsoft": "Warning",
+      "Function": "Information",
+      "Host.Results": "Information",
+      "Host.Aggregator": "Information",
+      "function_app": "Information",
+      "handlers.telegram_handler": "Information",
+      "handlers.receipt_handler": "Information",
+      "storage.local_store": "Information",
+      "services.dni_validator": "Information",
+      "services.telegram_client": "Information",
+      "services.vision": "Information"
+    },
+    "applicationInsights": {
+      "samplingSettings": {
+        "isEnabled": true,
+        "excludedTypes": "Request"
+      }
+    }
+  },
+  "healthMonitor": {
+    "enabled": false
+  },
+  "extensionBundle": {
+    "id": "Microsoft.Azure.Functions.ExtensionBundle",
+    "version": "[4.*, 5.0.0)"
+  }
+}

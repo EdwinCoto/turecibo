@@ -1,0 +1,4 @@
+azure-functions>=1.17.0
+python-telegram-bot==21.*
+openai>=1.30.0
+pydantic>=2.0.0
