@@ -83,7 +83,10 @@ async def telegram_webhook(req: func.HttpRequest) -> func.HttpResponse:
         logger.warning("Unauthorized webhook request — secret mismatch")
         return func.HttpResponse("Unauthorized", status_code=401)
 
-    body = req.get_json(silent=True)
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = None
     if not body:
         logger.info("telegram_webhook: invalid or empty body")
         return func.HttpResponse("Bad request", status_code=400)
