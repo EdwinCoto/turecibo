@@ -39,6 +39,26 @@ def _chunk_message(text: str, limit: int = 4000) -> list[str]:
     return chunks
 
 
+def _month_name_es(month_number: int) -> str:
+    month_names = (
+        "Enero",
+        "Febrero",
+        "Marzo",
+        "Abril",
+        "Mayo",
+        "Junio",
+        "Julio",
+        "Agosto",
+        "Septiembre",
+        "Octubre",
+        "Noviembre",
+        "Diciembre",
+    )
+    if month_number < 1 or month_number > 12:
+        raise ValueError(f"Invalid month value: {month_number}")
+    return month_names[month_number - 1]
+
+
 # ──────────────────────────────────────────
 # /start  /help
 # ──────────────────────────────────────────
@@ -113,11 +133,21 @@ async def cmd_mes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     receipts = get_receipts_by_month(month)
     logger.info("cmd_mes: month=%s receipts_found=%d", month, len(receipts))
+    try:
+        year, month_num = month.split("-")
+        month_label = f"{_month_name_es(int(month_num))} {year}"
+    except ValueError:
+        logger.warning("cmd_mes: invalid computed month=%s", month)
+        await update.message.reply_text(
+            f"❌ Fecha incorrecta: el mes `{month}` no es válido.",
+            parse_mode="Markdown",
+        )
+        return
     if not receipts:
-        await update.message.reply_text(f"📭 No hay recibos registrados para {month}.")
+        await update.message.reply_text(f"📭 No hay recibos registrados para {month_label}.")
         return
 
-    lines = [f"🗓 *Recibos de {month}* ({len(receipts)} encontrados)\n"]
+    lines = [f"🗓 *Recibos de {month_label}* ({len(receipts)} encontrados)\n"]
     for r in receipts:
         data = (r.get("extraction") or {}).get("data") or {}
         status_icon = {"processed": "✅", "pending": "⏳", "failed": "❌"}.get(r.get("status", ""), "❓")
@@ -175,7 +205,17 @@ async def cmd_global(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     lines = [f"📅 *Recibos de {year}* ({total_receipts} encontrados)\n"]
     for month_number, receipts in monthly_data:
-        lines.append(f"\n*Mes {month_number:02d}* ({len(receipts)})")
+        try:
+            month_name = _month_name_es(month_number)
+        except ValueError:
+            logger.warning("cmd_global: invalid month number in aggregation=%s", month_number)
+            await update.message.reply_text(
+                f"❌ Fecha incorrecta: el mes `{year}-{month_number:02d}` no es válido.",
+                parse_mode="Markdown",
+            )
+            return
+
+        lines.append(f"\n*{month_name}* ({len(receipts)})")
         for r in receipts:
             data = (r.get("extraction") or {}).get("data") or {}
             status_icon = {"processed": "✅", "pending": "⏳", "failed": "❌"}.get(r.get("status", ""), "❓")

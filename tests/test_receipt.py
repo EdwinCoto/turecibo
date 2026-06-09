@@ -3,7 +3,7 @@ import asyncio
 from typing import cast
 from datetime import date
 from models.receipt import ExtractionData, Receipt, ReceiptSource, ReceiptStatus
-from handlers.telegram_handler import cmd_delete, cmd_global, handle_text_message
+from handlers.telegram_handler import _month_name_es, cmd_delete, cmd_global, handle_text_message
 from telegram import Update
 from telegram.ext import ContextTypes
 from services import vision
@@ -334,3 +334,16 @@ def test_format_missing_dni_message_mentions_not_saved():
 
     assert "No encontré el DNI" in message
     assert "No lo guardaré" in message
+
+
+def test_month_name_es_uses_spanish_labels():
+    assert _month_name_es(5) == "Mayo"
+    assert _month_name_es(12) == "Diciembre"
+
+
+def test_month_name_es_raises_for_invalid_month():
+    with pytest.raises(ValueError):
+        _month_name_es(0)
+
+    with pytest.raises(ValueError):
+        _month_name_es(13)
