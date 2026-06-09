@@ -3,7 +3,7 @@ import asyncio
 from typing import cast
 from datetime import date
 from models.receipt import ExtractionData, Receipt, ReceiptSource, ReceiptStatus
-from handlers.telegram_handler import handle_text_message
+from handlers.telegram_handler import cmd_global, handle_text_message
 from telegram import Update
 from telegram.ext import ContextTypes
 from services import vision
@@ -234,6 +234,19 @@ def test_handle_text_message_prompts_for_photo():
     reply_text.assert_awaited_once_with(
         "📸 Envíame una foto de tu boleta para poder procesarla.",
     )
+
+
+def test_cmd_global_rejects_invalid_year_format():
+    reply_text = AsyncMock()
+    update = cast(Update, SimpleNamespace(message=SimpleNamespace(reply_text=reply_text)))
+    context = cast(ContextTypes.DEFAULT_TYPE, SimpleNamespace(args=["20ab"]))
+
+    asyncio.run(cmd_global(update, context))
+
+    reply_text.assert_awaited_once()
+    args, kwargs = reply_text.await_args
+    assert "Formato inválido" in args[0]
+    assert kwargs.get("parse_mode") == "Markdown"
 
 
 def test_format_success_message_includes_receipt_date():

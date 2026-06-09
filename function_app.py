@@ -8,6 +8,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from handlers.receipt_handler import handle_photo_message
 from handlers.telegram_handler import (
+    cmd_global,
     cmd_help,
     cmd_mes,
     cmd_recibo,
@@ -107,6 +108,7 @@ async def _notify_blocked_update(update: Update) -> None:
 _application.add_handler(CommandHandler("start", cmd_start))
 _application.add_handler(CommandHandler("help", cmd_help))
 _application.add_handler(CommandHandler("mes", cmd_mes))
+_application.add_handler(CommandHandler("global", cmd_global))
 _application.add_handler(CommandHandler("restaurante", cmd_restaurante))
 _application.add_handler(CommandHandler("recibo", cmd_recibo))
 

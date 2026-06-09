@@ -60,6 +60,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "🗓 `/mes` — recibos del mes actual\n"
         "🗓 `/mes MM` — recibos de un mes (ej: `/mes 03`)\n"
         "🗓 `/mes YYYY-MM` — recibos de un mes específico (ej: `/mes 2024-03`)\n\n"
+        "📅 `/global` — recibos del año actual, ordenados por mes\n"
+        "📅 `/global YYYY` — recibos de un año específico (ej: `/global 2026`)\n\n"
         "🏪 `/restaurante <RUC>` — valida si un restaurante tiene recibos\n"
         "🧾 `/recibo <id>` — detalle completo + foto de un recibo",
         parse_mode="Markdown",
@@ -126,6 +128,61 @@ async def cmd_mes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f"   💰 S/ {data.get('total_amount', '?')}  IGV: S/ {data.get('igv_amount', '?')}\n"
             f"   📅 {receipt_date}\n"
         )
+
+    for chunk in _chunk_message("\n".join(lines)):
+        await update.message.reply_text(chunk, parse_mode="Markdown")
+
+
+async def cmd_global(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.info("cmd_global: received args=%s", context.args)
+    args = context.args
+    now = datetime.now()
+
+    try:
+        if not args:
+            year = now.year
+        elif re.fullmatch(r"\d{4}", args[0]):
+            year = int(args[0])
+            datetime(year, 1, 1)
+        else:
+            raise ValueError("bad format")
+    except (ValueError, IndexError):
+        logger.info("cmd_global: invalid year format args=%s", args)
+        await update.message.reply_text(
+            "❌ Formato inválido.\n"
+            "Usa: `/global YYYY`  →  `/global 2026`\n"
+            "  o: `/global`       →  usa el año actual",
+            parse_mode="Markdown",
+        )
+        return
+
+    monthly_data: list[tuple[int, list[dict]]] = []
+    total_receipts = 0
+    for month_number in range(1, 13):
+        month_key = f"{year}-{month_number:02d}"
+        receipts = get_receipts_by_month(month_key)
+        if receipts:
+            monthly_data.append((month_number, receipts))
+            total_receipts += len(receipts)
+
+    logger.info("cmd_global: year=%d months_with_data=%d receipts_found=%d", year, len(monthly_data), total_receipts)
+
+    if total_receipts == 0:
+        await update.message.reply_text(f"📭 No hay recibos registrados para {year}.")
+        return
+
+    lines = [f"📅 *Recibos de {year}* ({total_receipts} encontrados)\n"]
+    for month_number, receipts in monthly_data:
+        lines.append(f"\n*Mes {month_number:02d}* ({len(receipts)})")
+        for r in receipts:
+            data = (r.get("extraction") or {}).get("data") or {}
+            status_icon = {"processed": "✅", "pending": "⏳", "failed": "❌"}.get(r.get("status", ""), "❓")
+            receipt_date = r.get("receipt_date") or r.get("created_at", "")[:10]
+            lines.append(
+                f"{status_icon} `{r['id'][:8]}` — {receipt_date}\n"
+                f"   🏪 {data.get('restaurant_name') or 'N/A'}\n"
+                f"   💰 S/ {data.get('total_amount', '?')}"
+            )
 
     for chunk in _chunk_message("\n".join(lines)):
         await update.message.reply_text(chunk, parse_mode="Markdown")
