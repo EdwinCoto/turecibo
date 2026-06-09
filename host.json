@@ -6,7 +6,7 @@
     },
     "logLevel": {
       "default": "Information",
-      "Worker": "Warning",
+      "Worker": "Information",
       "Host": "Warning",
       "Microsoft": "Warning",
       "Function": "Information",

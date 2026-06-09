@@ -26,6 +26,14 @@ from storage.local_store import (
 logger = logging.getLogger(__name__)
 
 
+def _escape_markdown_text(value: object) -> str:
+    text = "N/A" if value is None else str(value)
+    # Telegram Markdown (legacy) control characters that can break parsing.
+    for ch in ("_", "*", "`", "["):
+        text = text.replace(ch, f"\\{ch}")
+    return text
+
+
 def _format_receipt_date(receipt: Receipt) -> str:
     logger.info("_format_receipt_date: receipt_id=%s", receipt.id)
     if receipt.receipt_date is not None:
@@ -47,15 +55,20 @@ def _format_success_message(receipt: Receipt, extraction_data) -> str:
         else "—"
     )
     receipt_date = _format_receipt_date(receipt)
+    restaurant_name = _escape_markdown_text(extraction_data.restaurant_name)
+    ruc = _escape_markdown_text(extraction_data.ruc)
+    total_amount = _escape_markdown_text(extraction_data.total_amount)
+    igv_amount = _escape_markdown_text(extraction_data.igv_amount)
+    dni = _escape_markdown_text(extraction_data.dni)
 
     return (
         f"✅ *Recibo procesado* `{receipt.id[:8]}`\n\n"
-        f"🏪 {extraction_data.restaurant_name or 'N/A'}\n"
-        f"🔢 RUC: `{extraction_data.ruc or 'N/A'}`\n"
-        f"💰 Total: S/ {extraction_data.total_amount or 'N/A'}\n"
-        f"🧾 IGV: S/ {extraction_data.igv_amount or 'N/A'}\n"
+        f"🏪 {restaurant_name}\n"
+        f"🔢 RUC: `{ruc}`\n"
+        f"💰 Total: S/ {total_amount}\n"
+        f"🧾 IGV: S/ {igv_amount}\n"
         f"📅 Fecha: {receipt_date}\n"
-        f"🪪 DNI: `{extraction_data.dni or 'N/A'}` — {dni_status}"
+        f"🪪 DNI: `{dni}` — {dni_status}"
     )
 
 
