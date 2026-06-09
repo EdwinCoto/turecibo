@@ -107,6 +107,7 @@ Reglas:
 - El DNI debe ser exactamente 8 dígitos numéricos.
 - La fecha de emisión puede aparecer como "FECHA DE EMISION", "FECHA EMISION", "FECHA" o dentro de un bloque de datos del recibo.
 - Si encuentras una fecha del recibo, devuélvela en "emission_date" usando el formato YYYY-MM-DD.
+- Si la fecha incluye hora (por ejemplo, "27/05/2026 21:33:00"), ignora la hora y devuelve solo la fecha en formato YYYY-MM-DD.
 - Si no encuentras la fecha de emisión, usa null.
 - Para extraer el DNI, también considera etiquetas equivalentes como "DOCUMENTO", "D.N.I", "DNI", "DOC.", "DOCUMENTO DE IDENTIDAD" o variantes similares en el recibo.
 - Aunque en la imagen aparezca con otra etiqueta, siempre devuelve ese valor en el campo JSON "dni".
