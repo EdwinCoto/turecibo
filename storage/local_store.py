@@ -13,19 +13,26 @@ logger = logging.getLogger(__name__)
 
 def _default_storage_path() -> str:
     # Azure Functions zip deployments run from a read-only wwwroot; use /tmp unless overridden.
-    if os.environ.get("WEBSITE_INSTANCE_ID"):
+    if os.environ.get("IS_AZURE_FUNCTIONS_ENVIRONMENT") == "true":
         return "/tmp/turecibo/receipts"
     return "./data/receipts"
 
 
-BASE_PATH = Path(os.environ.get("LOCAL_STORAGE_PATH", _default_storage_path()))
+# Lazy resolution: computed on first call so Azure env vars are available by then.
+_base_path_cache: Optional[Path] = None
 
-logger.info("Local storage initialized at: %s", BASE_PATH)
+
+def _get_base_path() -> Path:
+    global _base_path_cache
+    if _base_path_cache is None:
+        _base_path_cache = Path(os.environ.get("LOCAL_STORAGE_PATH", _default_storage_path()))
+        logger.info("Local storage path resolved: %s", _base_path_cache)
+    return _base_path_cache
 
 def _receipt_dir(date_str: str) -> Path:
     """Return and create the directory for a given date string (YYYY-MM-DD)."""
     logger.info("_receipt_dir: date_str=%s", date_str)
-    day_dir = BASE_PATH / date_str
+    day_dir = _get_base_path() / date_str
     day_dir.mkdir(parents=True, exist_ok=True)
     return day_dir
 
@@ -38,9 +45,10 @@ def _receipt_date_str(receipt: Receipt) -> str:
 
 def _find_existing_receipt_file(receipt_id: str) -> Optional[Path]:
     logger.info("_find_existing_receipt_file: receipt_id=%s", receipt_id)
-    if not BASE_PATH.exists():
+    base = _get_base_path()
+    if not base.exists():
         return None
-    for day_dir in BASE_PATH.iterdir():
+    for day_dir in base.iterdir():
         if not day_dir.is_dir():
             continue
         candidate = day_dir / f"{receipt_id}.json"
@@ -113,9 +121,10 @@ def get_receipts_by_month(month: str) -> list[dict]:
     """Return all receipts for a given month (YYYY-MM), sorted by created_at asc."""
     logger.info("get_receipts_by_month: month=%s", month)
     results: list[dict] = []
-    if not BASE_PATH.exists():
+    base = _get_base_path()
+    if not base.exists():
         return results
-    for day_dir in sorted(BASE_PATH.iterdir()):
+    for day_dir in sorted(base.iterdir()):
         if not day_dir.is_dir():
             continue
         # day_dir.name is YYYY-MM-DD; check prefix match
@@ -134,9 +143,10 @@ def get_receipts_by_ruc(ruc: str) -> list[dict]:
     """Return all receipts that match a given RUC."""
     logger.info("get_receipts_by_ruc: ruc=%s", ruc)
     results: list[dict] = []
-    if not BASE_PATH.exists():
+    base = _get_base_path()
+    if not base.exists():
         return results
-    for day_dir in sorted(BASE_PATH.iterdir()):
+    for day_dir in sorted(base.iterdir()):
         if not day_dir.is_dir():
             continue
         for json_file in day_dir.glob("*.json"):
@@ -154,9 +164,10 @@ def get_receipts_by_ruc(ruc: str) -> list[dict]:
 def get_receipt_by_id(receipt_id: str) -> Optional[dict]:
     """Find a receipt by full ID or 8-char prefix."""
     logger.info("get_receipt_by_id: receipt_id=%s", receipt_id)
-    if not BASE_PATH.exists():
+    base = _get_base_path()
+    if not base.exists():
         return None
-    for day_dir in BASE_PATH.iterdir():
+    for day_dir in base.iterdir():
         if not day_dir.is_dir():
             continue
         for json_file in day_dir.glob("*.json"):
@@ -173,10 +184,11 @@ def get_receipt_by_id(receipt_id: str) -> Optional[dict]:
 def get_receipt_by_telegram_file_id(telegram_file_id: str) -> Optional[dict]:
     """Find a receipt by Telegram file id."""
     logger.info("get_receipt_by_telegram_file_id: telegram_file_id=%s", telegram_file_id)
-    if not BASE_PATH.exists():
+    base = _get_base_path()
+    if not base.exists():
         return None
 
-    for day_dir in BASE_PATH.iterdir():
+    for day_dir in base.iterdir():
         if not day_dir.is_dir():
             continue
         for json_file in day_dir.glob("*.json"):
@@ -200,10 +212,11 @@ def get_receipt_by_telegram_photo_identity(
         telegram_file_unique_id,
         telegram_file_id,
     )
-    if not BASE_PATH.exists():
+    base = _get_base_path()
+    if not base.exists():
         return None
 
-    for day_dir in BASE_PATH.iterdir():
+    for day_dir in base.iterdir():
         if not day_dir.is_dir():
             continue
         for json_file in day_dir.glob("*.json"):
@@ -223,10 +236,11 @@ def get_receipt_by_telegram_photo_identity(
 def get_receipt_by_photo_hash(photo_hash: str) -> Optional[dict]:
     """Find a receipt by the downloaded photo content hash."""
     logger.info("get_receipt_by_photo_hash: photo_hash=%s", photo_hash[:12])
-    if not BASE_PATH.exists():
+    base = _get_base_path()
+    if not base.exists():
         return None
 
-    for day_dir in BASE_PATH.iterdir():
+    for day_dir in base.iterdir():
         if not day_dir.is_dir():
             continue
         for json_file in day_dir.glob("*.json"):
@@ -243,10 +257,11 @@ def get_receipt_by_photo_hash(photo_hash: str) -> Optional[dict]:
 def get_receipt_by_fingerprint(fingerprint: str) -> Optional[dict]:
     """Find a receipt by normalized receipt content fingerprint."""
     logger.info("get_receipt_by_fingerprint: fingerprint=%s", fingerprint[:12])
-    if not BASE_PATH.exists():
+    base = _get_base_path()
+    if not base.exists():
         return None
 
-    for day_dir in BASE_PATH.iterdir():
+    for day_dir in base.iterdir():
         if not day_dir.is_dir():
             continue
         for json_file in day_dir.glob("*.json"):
