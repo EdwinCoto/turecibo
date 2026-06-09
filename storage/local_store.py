@@ -225,12 +225,9 @@ def build_receipt_fingerprint(receipt: dict) -> str:
     receipt_date = receipt.get("receipt_date") or data.get("emission_date") or receipt.get("created_at", "")[:10]
 
     canonical = {
-        "receipt_date": receipt_date,
-        "restaurant_name": (data.get("restaurant_name") or "").strip().lower(),
         "ruc": (data.get("ruc") or "").strip(),
+        "receipt_date": receipt_date,
         "total_amount": _normalize_amount(data.get("total_amount")),
-        "igv_amount": _normalize_amount(data.get("igv_amount")),
-        "currency": (data.get("currency") or "").strip().upper(),
         "dni": (data.get("dni") or "").strip(),
     }
     payload = json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
