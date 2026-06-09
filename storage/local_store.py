@@ -20,6 +20,7 @@ def _default_storage_path() -> str:
 
 BASE_PATH = Path(os.environ.get("LOCAL_STORAGE_PATH", _default_storage_path()))
 
+logger.info("Local storage initialized at: %s", BASE_PATH)
 
 def _receipt_dir(date_str: str) -> Path:
     """Return and create the directory for a given date string (YYYY-MM-DD)."""
