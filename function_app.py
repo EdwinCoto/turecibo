@@ -102,8 +102,9 @@ async def telegram_webhook(req: func.HttpRequest) -> func.HttpResponse:
         _application_initialized = True
         logger.info("telegram_webhook: telegram application initialized")
 
-    # Fire-and-forget: process update in background so we ACK Telegram immediately
-    asyncio.ensure_future(_process_update_safe(update))
-    logger.info("telegram_webhook: update scheduled for background processing")
+    # In Azure Functions, detached background tasks can be dropped when the HTTP
+    # invocation completes. Await processing to guarantee handlers run.
+    await _process_update_safe(update)
+    logger.info("telegram_webhook: update processed")
 
     return func.HttpResponse(status_code=200)

@@ -74,7 +74,7 @@ def _format_duplicate_message(existing_receipt: dict) -> str:
 async def handle_photo_message(message: Message) -> None:
     """
     Entry point called for each Telegram message containing photos.
-    Sends immediate ACK and fires off background processing for each photo.
+    Sends immediate ACK and then processes each photo reliably.
     """
     chat_id = message.chat.id
     logger.info("handle_photo_message: chat_id=%s photos_received=%d", chat_id, len(message.photo))
@@ -103,9 +103,9 @@ async def handle_photo_message(message: Message) -> None:
         # Save pending record immediately
         save_receipt(receipt)
         logger.info("handle_photo_message: pending receipt saved receipt_id=%s", receipt.id)
-        # Process asynchronously — do not await
-        import asyncio
-        asyncio.ensure_future(_process_receipt(receipt, photo, chat_id))
+        # In Azure Functions, fire-and-forget tasks may never complete after the
+        # HTTP invocation closes. Await to guarantee extraction runs.
+        await _process_receipt(receipt, photo, chat_id)
 
 
 def _select_best_photos(photos: tuple[PhotoSize, ...]) -> list[PhotoSize]:
