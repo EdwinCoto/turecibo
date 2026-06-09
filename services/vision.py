@@ -112,6 +112,9 @@ Reglas:
 - Devuelve SOLO el JSON, sin texto adicional ni markdown.
 - Si un campo no está visible en la imagen, usa null.
 - total_amount y igv_amount deben ser números con 2 decimales.
+- Para `total_amount`, prioriza la línea final etiquetada como "IMPORTE TOTAL", "TOTAL", "TOTAL A PAGAR", "IMPORTE FINAL" o equivalente.
+- Si hay múltiples totales, elige SIEMPRE el importe final que aparece después de impuestos/IGV y después de descuentos/recargos.
+- NO uses subtotales, importes parciales o montos intermedios que aparezcan al inicio del comprobante.
 - Si el IGV no es visible pero el total sí, calcula igv_amount = round(total * (0.18 / 1.18), 2).
 - El RUC debe ser exactamente 11 dígitos numéricos.
 - Para extraer el RUC, considera SOLO etiquetas como "R.U.C", "RUC", "RUC:", "R.U.C.", "RUC N°", "Nro RUC" o variantes similares.
