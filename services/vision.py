@@ -9,7 +9,7 @@ from typing import Optional
 from openai import AsyncOpenAI
 
 from models.receipt import ExtractionData
-from services import ruc_validator
+from services import electronic_receipt_validator, ruc_validator
 
 logger = logging.getLogger(__name__)
 
@@ -100,27 +100,55 @@ Analiza la imagen y extrae los siguientes campos en formato JSON estricto:
 {
   "restaurant_name": "<nombre del restaurante o null>",
   "ruc": "<RUC de 11 dígitos o null>",
+  "electronic_receipt_number": "<número de boleta electrónica (BXXX-########) o null>",
   "total_amount": <monto total como número decimal o null>,
-  "igv_amount": <monto IGV como número decimal o null>,
-  "igv_rate": <tasa IGV como decimal, ej: 0.18, o null>,
   "currency": "<moneda, usualmente PEN>",
-    "dni": "<DNI de 8 dígitos del cliente o null>",
-    "emission_date": "<fecha de emisión del recibo en formato YYYY-MM-DD o null>"
+  "dni": "<DNI de 8 dígitos del cliente o null>",
+  "emission_date": "<fecha de emisión del recibo en formato YYYY-MM-DD o null>"
 }
+
+Guía de verificación del RUC (módulo 11):
+- El RUC tiene 11 dígitos: d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11.
+- d1 y d2 son el prefijo (deben ser válidos según reglas).
+- d11 es el dígito verificador y se calcula usando d1..d10.
+- Pesos para d1..d10: 5,4,3,2,7,6,5,4,3,2.
+- Suma ponderada: S = d1*5 + d2*4 + d3*3 + d4*2 + d5*7 + d6*6 + d7*5 + d8*4 + d9*3 + d10*2.
+- Residuo: R = S mod 11.
+- Verificador: V = 11 - R.
+- Ajustes SUNAT: si V=10 entonces V=0; si V=11 entonces V=1.
+- El RUC es consistente si d11 = V.
+
+Ejemplos de consistencia:
+- 20605899286 -> prefijo 20 válido y dígito final 6 consistente con módulo 11.
+- 20510885229 -> prefijo 20 válido y dígito final 9 consistente con módulo 11.
+- 20613724851 -> prefijo 20 válido y dígito final 1 consistente con módulo 11.
 
 Reglas:
 - Devuelve SOLO el JSON, sin texto adicional ni markdown.
 - Si un campo no está visible en la imagen, usa null.
-- total_amount y igv_amount deben ser números con 2 decimales.
+- El nombre del restaurante tiene el siguiente formato: " NAME S.A.C." , "NAME  E.I.R.L." o "NAME S.A " , extraer todo el bloque incluyendo la forma jurídica (S.A.C., E.I.R.L., S.A., etc). 
+- El nombre del restaurante suele estar en la parte superior del recibo, pero no siempre.
+- total_amount debe ser un número con 2 decimales.
 - Para `total_amount`, prioriza la línea final etiquetada como "IMPORTE TOTAL", "TOTAL", "TOTAL A PAGAR", "IMPORTE FINAL" o equivalente.
-- Si hay múltiples totales, elige SIEMPRE el importe final que aparece después de impuestos/IGV y después de descuentos/recargos.
+- Si hay múltiples totales, elige SIEMPRE el importe final que aparece después de impuestos y después de descuentos/recargos.
 - NO uses subtotales, importes parciales o montos intermedios que aparezcan al inicio del comprobante.
-- Si el IGV no es visible pero el total sí, calcula igv_amount = round(total * (0.18 / 1.18), 2).
 - El RUC debe ser exactamente 11 dígitos numéricos.
 - Para extraer el RUC, considera SOLO etiquetas como "R.U.C", "RUC", "RUC:", "R.U.C.", "RUC N°", "Nro RUC" o variantes similares.
 - No uses números de operación, ticket, autorización, serie, transacción o referencia como RUC.
 - Si el valor de RUC es ambiguo o no es confiable, devuelve null.
+- El numero de RUC se encuentra generalmente en la parte superior del recibo, cerca del nombre del restaurante, pero no siempre. cada uno en linea diferente.
+- Si el RUC está parcialmente ilegible por pixelado o baja calidad, aplica esta recuperación SOLO si es determinística:
+    1) Debes tener claros los 2 primeros dígitos (prefijo) y el último dígito verificador.
+    2) Debes tener claros 7 de los 8 dígitos intermedios (dígitos 3 al 10).
+    3) Si falta exactamente 1 dígito intermedio, reconstruye ese único dígito usando la regla del dígito verificador (módulo 11).
+    4) Si faltan 2 o más dígitos intermedios, NO reconstruyas y devuelve null.
+    5) Si hay más de una reconstrucción posible o cualquier duda, devuelve null.
 - El DNI debe ser exactamente 8 dígitos numéricos
+- El número de boleta electrónica debe tener este patrón: serie + "-" + correlativo.
+- La serie debe tener 4 caracteres alfanuméricos y empezar con "B" (ej: B130, BPE1, B001).
+- El correlativo debe tener entre 1 y 8 dígitos numéricos y empezar desde 1.
+- Ejemplos válidos: B130-00274475, BPE1-000237.
+- No inventes el número de boleta: si no se ve claro o es ambiguo, devuelve null.
 - Para extraer el DNI, considera SOLO etiquetas equivalentes como "DOCUMENTO", "D.N.I", "DNI", "DOC.", "DOCUMENTO DE IDENTIDAD" o variantes similares en el recibo.
 - La fecha de emisión puede aparecer como "FECHA DE EMISION", "FECHA EMISION", "FECHA" o dentro de un bloque de datos del recibo.
 - Si encuentras una fecha del recibo, devuélvela en "emission_date" usando el formato YYYY-MM-DD.
@@ -151,6 +179,17 @@ def _normalize_ruc_value(value: object) -> str | None:
         return None
     if not ruc_validator.is_valid_format(normalized):
         logger.info("_normalize_ruc_value: invalid normalized ruc=%s", normalized)
+        return None
+    return normalized
+
+
+def _normalize_electronic_receipt_number(value: object) -> str | None:
+    logger.info("_normalize_electronic_receipt_number: start value_type=%s", type(value).__name__)
+    normalized = electronic_receipt_validator.normalize_electronic_receipt_number(value)
+    if not normalized:
+        return None
+
+    if not electronic_receipt_validator.is_valid_format(normalized):
         return None
     return normalized
 
@@ -205,6 +244,10 @@ def _normalize_extraction_payload(parsed: dict) -> dict:
                 break
 
     normalized["ruc"] = _normalize_ruc_value(normalized.get("ruc"))
+
+    normalized["electronic_receipt_number"] = _normalize_electronic_receipt_number(
+        normalized.get("electronic_receipt_number")
+    )
 
     if normalized.get("dni") is None:
         for field_name in _DNI_FIELD_ALIASES:
@@ -270,13 +313,13 @@ async def extract_receipt_data(image_bytes: bytes, receipt_id: str | None = None
     parsed = _normalize_extraction_payload(json.loads(raw.strip()))
     logger.info("Copilot parsed extraction payload for receipt %s: %s", receipt_id or "n/a", parsed)
 
-    # Normalise amounts to 2 decimal places
+    # Normalise total_amount to 2 decimal places
     if parsed.get("total_amount") is not None:
         parsed["total_amount"] = round(float(parsed["total_amount"]), 2)
-    if parsed.get("igv_amount") is not None:
-        parsed["igv_amount"] = round(float(parsed["igv_amount"]), 2)
-    elif parsed.get("total_amount") is not None:
-        parsed["igv_amount"] = round(parsed["total_amount"] * (0.18 / 1.18), 2)
+
+    # Drop IGV fields if model still returns them
+    parsed.pop("igv_amount", None)
+    parsed.pop("igv_rate", None)
 
     extraction_data = ExtractionData(**parsed)
     logger.info(

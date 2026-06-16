@@ -4,6 +4,7 @@ import re
 logger = logging.getLogger(__name__)
 
 _RUC_PATTERN = re.compile(r"^\d{11}$")
+_RUC_FULL_PATTERN = re.compile(r"^(10|15|16|17|20)\d{9}$")
 _RUC_VALUE_PATTERN = re.compile(r"\b(\d{11})\b")
 _VALID_PREFIXES = ("10", "15", "16", "17", "20")
 
@@ -31,13 +32,11 @@ def _is_valid_check_digit(ruc: str) -> bool:
 
     factors = (5, 4, 3, 2, 7, 6, 5, 4, 3, 2)
     weighted_sum = sum(int(ruc[i]) * factors[i] for i in range(10))
-    check_digit = 11 - (weighted_sum % 11)
-    if check_digit == 10:
-        check_digit = 0
-    elif check_digit == 11:
-        check_digit = 1
+    residue = weighted_sum % 11
+    verifier = 11 - residue
+    expected_digit = verifier % 10
 
-    return check_digit == int(ruc[-1])
+    return expected_digit == int(ruc[-1])
 
 
 def is_valid_format(ruc: str) -> bool:
@@ -45,6 +44,10 @@ def is_valid_format(ruc: str) -> bool:
     normalized = normalize_ruc_value(ruc)
     if not normalized:
         logger.info("is_valid_format(ruc): ruc=%s valid=False reason=normalize", ruc)
+        return False
+
+    if not _RUC_FULL_PATTERN.match(normalized):
+        logger.info("is_valid_format(ruc): ruc=%s valid=False reason=pattern", normalized)
         return False
 
     if not normalized.startswith(_VALID_PREFIXES):

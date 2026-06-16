@@ -76,3 +76,23 @@ def test_normalize_extraction_payload_rejects_invalid_ruc():
     normalized = vision._normalize_extraction_payload(payload)
 
     assert normalized["ruc"] is None
+
+
+def test_normalize_extraction_payload_extracts_electronic_receipt_number():
+    payload = {
+        "electronic_receipt_number": "B130-00274475",
+    }
+
+    normalized = vision._normalize_extraction_payload(payload)
+
+    assert normalized["electronic_receipt_number"] == "B130-00274475"
+
+
+def test_normalize_extraction_payload_rejects_invalid_electronic_receipt_number():
+    payload = {
+        "electronic_receipt_number": "F130-000123",
+    }
+
+    normalized = vision._normalize_extraction_payload(payload)
+
+    assert normalized["electronic_receipt_number"] is None

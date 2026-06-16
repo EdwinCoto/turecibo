@@ -14,7 +14,7 @@ from models.receipt import (
     ReceiptSource,
     ReceiptStatus,
 )
-from services import dni_validator, ruc_validator, vision
+from services import dni_validator, electronic_receipt_validator, ruc_validator, vision
 from services.telegram_client import get_bot, send_message
 from storage.local_store import (
     build_receipt_fingerprint,
@@ -57,16 +57,16 @@ def _format_success_message(receipt: Receipt, extraction_data) -> str:
     receipt_date = _format_receipt_date(receipt)
     restaurant_name = _escape_markdown_text(extraction_data.restaurant_name)
     ruc = _escape_markdown_text(extraction_data.ruc)
+    electronic_receipt_number = _escape_markdown_text(extraction_data.electronic_receipt_number)
     total_amount = _escape_markdown_text(extraction_data.total_amount)
-    igv_amount = _escape_markdown_text(extraction_data.igv_amount)
     dni = _escape_markdown_text(extraction_data.dni)
 
     return (
         f"✅ *Recibo procesado* `{receipt.id[:8]}`\n\n"
         f"🏪 {restaurant_name}\n"
         f"🔢 RUC: `{ruc}`\n"
+        f"🧾 Boleta: `{electronic_receipt_number}`\n"
         f"💰 Total: S/ {total_amount}\n"
-        f"🧾 IGV: S/ {igv_amount}\n"
         f"📅 Fecha: {receipt_date}\n"
         f"🪪 DNI: `{dni}` — {dni_status}"
     )
@@ -176,6 +176,23 @@ async def _process_receipt(receipt: Receipt, photo: PhotoSize, chat_id: int) -> 
         # 2. Extract data via OpenAI vision
         extraction_data = await vision.extract_receipt_data(photo_bytes, receipt.id)
         logger.info("_process_receipt: extraction completed receipt_id=%s", receipt.id)
+
+        # Second-pass verification for electronic receipt number.
+        if extraction_data.electronic_receipt_number:
+            normalized_receipt_number = electronic_receipt_validator.normalize_electronic_receipt_number(
+                extraction_data.electronic_receipt_number
+            )
+            if normalized_receipt_number and await electronic_receipt_validator.validate_electronic_receipt_number(
+                normalized_receipt_number
+            ):
+                extraction_data.electronic_receipt_number = normalized_receipt_number
+            else:
+                logger.info(
+                    "_process_receipt: invalid electronic receipt number; dropping value receipt_id=%s value=%s",
+                    receipt.id,
+                    extraction_data.electronic_receipt_number,
+                )
+                extraction_data.electronic_receipt_number = None
 
         if not extraction_data.ruc or not await ruc_validator.validate_ruc(extraction_data.ruc):
             logger.info("_process_receipt: invalid or missing ruc; skipping storage receipt_id=%s", receipt.id)

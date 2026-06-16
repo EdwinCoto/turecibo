@@ -160,7 +160,7 @@ async def cmd_mes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         lines.append(
             f"{status_icon} `{r['id'][:8]}`  {dni_icon}\n"
             f"   🏪 {data.get('restaurant_name') or 'N/A'}\n"
-            f"   💰 S/ {data.get('total_amount', '?')}  IGV: S/ {data.get('igv_amount', '?')}\n"
+            f"   💰 S/ {data.get('total_amount', '?')}\n"
             f"   📅 {receipt_date}\n"
         )
 
@@ -195,7 +195,11 @@ async def cmd_global(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     total_receipts = 0
     for month_number in range(1, 13):
         month_key = f"{year}-{month_number:02d}"
-        receipts = get_receipts_by_month(month_key)
+        receipts = [
+            receipt
+            for receipt in get_receipts_by_month(month_key)
+            if receipt.get("status") == "processed"
+        ]
         if receipts:
             monthly_data.append((month_number, receipts))
             total_receipts += len(receipts)
@@ -226,6 +230,8 @@ async def cmd_global(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             lines.append(
                 f"{status_icon} `{r['id'][:8]}` — {receipt_date}\n"
                 f"   🏪 {data.get('restaurant_name') or 'N/A'}\n"
+                f"   🔢 RUC: `{data.get('ruc') or 'N/A'}`\n"
+                f"   🧾 Boleta: `{data.get('electronic_receipt_number') or 'N/A'}`\n"
                 f"   💰 S/ {data.get('total_amount', '?')}"
             )
 
@@ -238,7 +244,7 @@ def _build_excel(year: int, monthly_data: list[tuple[int, list[dict]]]) -> Bytes
     # Remove default empty sheet.
     workbook.remove(workbook.active)
 
-    headers = ["RUC", "NOMBRE DEL COMERCIO O RESTAURANTE", "FECHA", "MONTO", "IGV", "DNI"]
+    headers = ["RUC", "NOMBRE DEL COMERCIO O RESTAURANTE", "FECHA", "MONTO", "DNI"]
 
     for month_number, receipts in monthly_data:
         sheet_name = _month_name_es(month_number)[:31]
@@ -259,7 +265,6 @@ def _build_excel(year: int, monthly_data: list[tuple[int, list[dict]]]) -> Bytes
                     data.get("restaurant_name") or "",
                     receipt_date,
                     data.get("total_amount") if data.get("total_amount") is not None else "",
-                    data.get("igv_amount") if data.get("igv_amount") is not None else "",
                     data.get("dni") or "",
                 ]
             )
@@ -381,8 +386,7 @@ async def cmd_recibo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         f"🏪 Restaurante: {data.get('restaurant_name') or 'N/A'}\n"
         f"🔢 RUC: `{data.get('ruc') or 'N/A'}`\n"
         f"💰 Total: S/ {data.get('total_amount', 'N/A')}\n"
-        f"🧾 IGV: S/ {data.get('igv_amount', 'N/A')}\n"
-        f"🪪 DNI: `{data.get('dni') or 'N/A'}` — {dni_status}\n"
+        f" DNI: `{data.get('dni') or 'N/A'}` — {dni_status}\n"
         f"📅 Fecha: {receipt.get('receipt_date') or receipt['created_at'][:10]}\n"
         f"🔄 Estado: {receipt.get('status', 'N/A')}"
     )

@@ -40,9 +40,8 @@ def test_receipt_json_round_trip():
     assert data["extraction"]["status"] == "pending"
 
 
-def test_extraction_data_igv_defaults():
-    d = ExtractionData(total_amount=59.0, igv_amount=9.0)
-    assert d.igv_rate == 0.18
+def test_extraction_data_currency_default():
+    d = ExtractionData(total_amount=59.0)
     assert d.currency == "PEN"
 
 
@@ -51,11 +50,18 @@ def test_extraction_data_accepts_emission_date():
     assert d.emission_date == date(2026, 6, 8)
 
 
+def test_extraction_data_accepts_electronic_receipt_number():
+    d = ExtractionData(electronic_receipt_number="BPE1-000237")
+    assert d.electronic_receipt_number == "BPE1-000237"
+
+
 # ──────────────────────────────────────────
 # DNI validator (sync format checks only)
 # ──────────────────────────────────────────
 
 from services.dni_validator import is_valid_format, validate_dni
+from services.electronic_receipt_validator import is_valid_format as is_valid_electronic_receipt_format
+from services.electronic_receipt_validator import validate_electronic_receipt_number
 from services.ruc_validator import is_valid_format as is_valid_ruc_format
 from services.ruc_validator import validate_ruc
 
@@ -84,10 +90,13 @@ def test_validate_dni_uses_local_format_only(dni, expected):
 
 @pytest.mark.parametrize("ruc,expected", [
     ("20613724851", True),
+    ("20605899286", True),
+    ("20510885229", True),
     ("20425476115", True),
     ("2061372485", False),
     ("206137248512", False),
     ("2061372485A", False),
+    ("20605899287", False),
     ("00000000000", False),
     ("", False),
 ])
@@ -97,13 +106,40 @@ def test_ruc_format(ruc, expected):
 
 @pytest.mark.parametrize("ruc,expected", [
     ("20613724851", True),
+    ("20605899286", True),
+    ("20510885229", True),
     ("20425476115", True),
+    ("20605899287", False),
     ("2061372485", False),
     ("00000000000", False),
     ("abc", False),
 ])
 def test_validate_ruc_uses_local_format_only(ruc, expected):
     assert asyncio.run(validate_ruc(ruc)) is expected
+
+
+@pytest.mark.parametrize("receipt_number,expected", [
+    ("B130-00274475", True),
+    ("BPE1-000237", True),
+    ("B001-1", True),
+    ("F130-00274475", False),
+    ("B13-00274475", False),
+    ("B130-00000000", False),
+    ("B13000274475", False),
+    ("", False),
+])
+def test_electronic_receipt_number_format(receipt_number, expected):
+    assert is_valid_electronic_receipt_format(receipt_number) == expected
+
+
+@pytest.mark.parametrize("receipt_number,expected", [
+    ("B130-00274475", True),
+    ("BPE1-000237", True),
+    ("B130-00000000", False),
+    ("F130-00274475", False),
+])
+def test_validate_electronic_receipt_number(receipt_number, expected):
+    assert asyncio.run(validate_electronic_receipt_number(receipt_number)) is expected
 
 
 # ──────────────────────────────────────────
@@ -195,7 +231,6 @@ def test_build_receipt_fingerprint_is_stable(tmp_path):
                 "restaurant_name": "Pardos Chicken",
                 "ruc": "20425476115",
                 "total_amount": 108.40,
-                "igv_amount": 15.24,
                 "currency": "PEN",
                 "dni": "72804567",
             }
@@ -225,7 +260,6 @@ def test_get_receipt_by_fingerprint_matches_recomputed_when_stored_is_legacy(tmp
             restaurant_name="KG BAR S.A.C.",
             ruc="20613724851",
             total_amount=106.0,
-            igv_amount=9.63,
             dni="72804567",
             dni_valid=True,
         )
@@ -390,7 +424,6 @@ def test_format_success_message_includes_receipt_date():
         restaurant_name="Demo",
         ruc="20123456789",
         total_amount=10.0,
-        igv_amount=1.8,
         dni="12345678",
         dni_valid=True,
     )
@@ -398,6 +431,22 @@ def test_format_success_message_includes_receipt_date():
     message = _format_success_message(receipt, extraction)
 
     assert "📅 Fecha: 2026-06-08" in message
+
+
+def test_format_success_message_includes_electronic_receipt_number():
+    receipt = Receipt(source=make_source())
+    extraction = ExtractionData(
+        restaurant_name="Demo",
+        ruc="20123456789",
+        electronic_receipt_number="B130-00274475",
+        total_amount=10.0,
+        dni="12345678",
+        dni_valid=True,
+    )
+
+    message = _format_success_message(receipt, extraction)
+
+    assert "🧾 Boleta: `B130-00274475`" in message
 
 
 def test_format_duplicate_message_includes_storage_notice():

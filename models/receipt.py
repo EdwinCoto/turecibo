@@ -40,9 +40,8 @@ class ReceiptPhoto(BaseModel):
 class ExtractionData(BaseModel):
     restaurant_name: Optional[str] = None
     ruc: Optional[str] = None
+    electronic_receipt_number: Optional[str] = None
     total_amount: Optional[float] = None
-    igv_amount: Optional[float] = None
-    igv_rate: float = 0.18
     currency: str = "PEN"
     emission_date: Optional[date] = None
     dni: Optional[str] = None
