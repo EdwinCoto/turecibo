@@ -3,7 +3,7 @@ import asyncio
 from typing import cast
 from datetime import date
 from models.receipt import ExtractionData, Receipt, ReceiptSource, ReceiptStatus
-from handlers.telegram_handler import _month_name_es, cmd_delete, cmd_excel, cmd_global, handle_text_message
+from handlers.telegram_handler import _month_name_es, cmd_delete, cmd_excel, cmd_global, cmd_recibo, cmd_sync, handle_text_message
 from telegram import Update
 from telegram.ext import ContextTypes
 from services import vision
@@ -414,6 +414,143 @@ def test_cmd_delete_reports_not_found(monkeypatch):
     reply_text.assert_awaited_once()
     args, kwargs = reply_text.await_args
     assert "no encontrado" in args[0]
+    assert kwargs.get("parse_mode") == "Markdown"
+
+
+def test_cmd_recibo_includes_boleta_number(monkeypatch):
+    reply_text = AsyncMock()
+    reply_photo = AsyncMock()
+    update = cast(
+        Update,
+        SimpleNamespace(message=SimpleNamespace(reply_text=reply_text, reply_photo=reply_photo)),
+    )
+    context = cast(ContextTypes.DEFAULT_TYPE, SimpleNamespace(args=["abc12345"]))
+
+    monkeypatch.setattr(
+        "handlers.telegram_handler.get_receipt_by_id",
+        lambda _rid: {
+            "id": "abc12345-0000-0000-0000-000000000000",
+            "created_at": "2026-06-16T00:00:00+00:00",
+            "status": "processed",
+            "photo": {},
+            "extraction": {
+                "data": {
+                    "restaurant_name": "Demo",
+                    "ruc": "20123456789",
+                    "electronic_receipt_number": "B130-00274475",
+                    "total_amount": 42.5,
+                    "dni": "12345678",
+                    "dni_valid": True,
+                }
+            },
+        },
+    )
+
+    asyncio.run(cmd_recibo(update, context))
+
+
+def test_cmd_sync_keeps_existing_boleta_without_reextracting(monkeypatch):
+    reply_text = AsyncMock()
+    update = cast(Update, SimpleNamespace(message=SimpleNamespace(reply_text=reply_text)))
+    context = cast(ContextTypes.DEFAULT_TYPE, SimpleNamespace(args=["abc12345"]))
+
+    monkeypatch.setattr(
+        "handlers.telegram_handler.get_receipt_by_id",
+        lambda _rid: {
+            "id": "abc12345-0000-0000-0000-000000000000",
+            "photo": {"local_path": "data/receipts/2026-06-16/abc12345.jpg"},
+            "extraction": {
+                "data": {"electronic_receipt_number": "B130-00274475"},
+            },
+            "source": {
+                "telegram_user_id": 1,
+                "telegram_chat_id": 1,
+                "telegram_message_id": 1,
+                "telegram_file_id": "f1",
+            },
+        },
+    )
+
+    extract_mock = AsyncMock()
+    monkeypatch.setattr("handlers.telegram_handler.vision.extract_receipt_data", extract_mock)
+
+    asyncio.run(cmd_sync(update, context))
+
+    extract_mock.assert_not_called()
+    reply_text.assert_awaited_once()
+    args, kwargs = reply_text.await_args
+    assert "ya tiene número de boleta" in args[0]
+    assert "B130-00274475" in args[0]
+    assert kwargs.get("parse_mode") == "Markdown"
+
+
+def test_cmd_sync_updates_boleta_when_missing(monkeypatch):
+    reply_text = AsyncMock()
+    update = cast(Update, SimpleNamespace(message=SimpleNamespace(reply_text=reply_text)))
+    context = cast(ContextTypes.DEFAULT_TYPE, SimpleNamespace(args=["abc12345"]))
+
+    monkeypatch.setattr(
+        "handlers.telegram_handler.get_receipt_by_id",
+        lambda _rid: {
+            "id": "abc12345-0000-0000-0000-000000000000",
+            "created_at": "2026-06-16T00:00:00+00:00",
+            "status": "processed",
+            "source": {
+                "telegram_user_id": 1,
+                "telegram_chat_id": 1,
+                "telegram_message_id": 1,
+                "telegram_file_id": "f1",
+            },
+            "photo": {"local_path": "azure://turecibo-receipts/photos/2026-06-16/abc12345.jpg"},
+            "extraction": {
+                "status": "success",
+                "processed_at": "2026-06-16T00:00:00+00:00",
+                "data": {
+                    "restaurant_name": "Demo",
+                    "ruc": "20123456789",
+                    "electronic_receipt_number": None,
+                    "total_amount": 42.5,
+                    "currency": "PEN",
+                    "dni": "12345678",
+                    "dni_valid": True,
+                },
+            },
+        },
+    )
+    monkeypatch.setattr("handlers.telegram_handler.get_photo_bytes", lambda _path: b"fake-image")
+
+    extract_mock = AsyncMock(
+        return_value=ExtractionData(
+            electronic_receipt_number="B130-00274475",
+        )
+    )
+    monkeypatch.setattr("handlers.telegram_handler.vision.extract_receipt_data", extract_mock)
+
+    validate_mock = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        "handlers.telegram_handler.electronic_receipt_validator.validate_electronic_receipt_number",
+        validate_mock,
+    )
+
+    saved = {}
+
+    def _capture_saved(receipt: Receipt):
+        saved["receipt"] = receipt
+
+    monkeypatch.setattr("handlers.telegram_handler.save_receipt", _capture_saved)
+
+    asyncio.run(cmd_sync(update, context))
+
+    extract_mock.assert_awaited_once()
+    validate_mock.assert_awaited_once_with("B130-00274475")
+    assert "receipt" in saved
+    assert saved["receipt"].extraction.data is not None
+    assert saved["receipt"].extraction.data.electronic_receipt_number == "B130-00274475"
+
+    reply_text.assert_awaited_once()
+    args, kwargs = reply_text.await_args
+    assert "Sincronización completada" in args[0]
+    assert "B130-00274475" in args[0]
     assert kwargs.get("parse_mode") == "Markdown"
 
 

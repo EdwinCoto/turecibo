@@ -209,4 +209,4 @@ data/
 
 # OS
 .DS_Store
-Thumbs.db
+Thumbs.dbscripts/set_webhook.py

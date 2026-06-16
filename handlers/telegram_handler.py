@@ -1,7 +1,7 @@
 import logging
 import re
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -9,12 +9,16 @@ from openpyxl import Workbook
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from models.receipt import Receipt
+from services import electronic_receipt_validator, vision
+
 from storage.local_store import (
     delete_receipt_by_id,
     get_photo_bytes,
     get_receipt_by_id,
     get_receipts_by_month,
     get_receipts_by_ruc,
+    save_receipt,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,6 +92,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "📄 `/excel YYYY` — exporta recibos de un año específico a Excel\n\n"
         "🏪 `/restaurante <RUC>` — valida si un restaurante tiene recibos\n"
         "🧾 `/recibo <id>` — detalle completo + foto de un recibo\n"
+        "🔄 `/sync <id>` — sincroniza el número de boleta electrónica\n"
         "🗑 `/eliminar <id>` — elimina recibo y archivos asociados",
         parse_mode="Markdown",
     )
@@ -385,6 +390,7 @@ async def cmd_recibo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         f"🧾 *Recibo* `{receipt['id'][:8]}`\n\n"
         f"🏪 Restaurante: {data.get('restaurant_name') or 'N/A'}\n"
         f"🔢 RUC: `{data.get('ruc') or 'N/A'}`\n"
+        f"🧾 Boleta: `{data.get('electronic_receipt_number') or 'N/A'}`\n"
         f"💰 Total: S/ {data.get('total_amount', 'N/A')}\n"
         f" DNI: `{data.get('dni') or 'N/A'}` — {dni_status}\n"
         f"📅 Fecha: {receipt.get('receipt_date') or receipt['created_at'][:10]}\n"
@@ -401,6 +407,89 @@ async def cmd_recibo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     logger.info("cmd_recibo: sending text-only receipt_id=%s", receipt.get("id", "")[:8])
     await update.message.reply_text(caption, parse_mode="Markdown")
+
+
+async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.info("cmd_sync: received args=%s", context.args)
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Proporciona el ID del recibo.\nEjemplo: `/sync abc12345`",
+            parse_mode="Markdown",
+        )
+        return
+
+    receipt = get_receipt_by_id(context.args[0].strip())
+    if not receipt:
+        await update.message.reply_text(
+            f"❌ Recibo `{context.args[0]}` no encontrado.",
+            parse_mode="Markdown",
+        )
+        return
+
+    receipt_id = receipt.get("id", "")
+    extraction = (receipt.get("extraction") or {})
+    data = (extraction.get("data") or {})
+    existing_receipt_number = data.get("electronic_receipt_number")
+
+    if existing_receipt_number:
+        await update.message.reply_text(
+            "✅ Este recibo ya tiene número de boleta sincronizado.\n"
+            f"🧾 Boleta: `{existing_receipt_number}`",
+            parse_mode="Markdown",
+        )
+        return
+
+    photo_path = (receipt.get("photo") or {}).get("local_path")
+    if not photo_path:
+        await update.message.reply_text(
+            f"❌ El recibo `{receipt_id[:8]}` no tiene foto asociada para reextraer datos.",
+            parse_mode="Markdown",
+        )
+        return
+
+    photo_bytes = get_photo_bytes(photo_path)
+    if not photo_bytes:
+        await update.message.reply_text(
+            f"❌ No pude leer la foto almacenada para el recibo `{receipt_id[:8]}`.",
+            parse_mode="Markdown",
+        )
+        return
+
+    extraction_data = await vision.extract_receipt_data(photo_bytes, receipt_id)
+    normalized_receipt_number = electronic_receipt_validator.normalize_electronic_receipt_number(
+        extraction_data.electronic_receipt_number
+    )
+    if not normalized_receipt_number or not await electronic_receipt_validator.validate_electronic_receipt_number(
+        normalized_receipt_number
+    ):
+        await update.message.reply_text(
+            "⚠️ No se pudo extraer un número de boleta electrónica válido desde la imagen.",
+            parse_mode="Markdown",
+        )
+        return
+
+    payload = dict(receipt)
+    extraction_payload = dict(extraction)
+    data_payload = dict(data)
+    photo_payload = dict(payload.get("photo") or {})
+    if photo_payload and photo_payload.get("size_bytes") is None:
+        photo_payload["size_bytes"] = len(photo_bytes)
+    data_payload["electronic_receipt_number"] = normalized_receipt_number
+    extraction_payload["data"] = data_payload
+    extraction_payload["processed_at"] = datetime.now(tz=timezone.utc).isoformat()
+    if extraction_payload.get("status") == "pending":
+        extraction_payload["status"] = "success"
+    payload["photo"] = photo_payload
+    payload["extraction"] = extraction_payload
+
+    updated_receipt = Receipt.model_validate(payload)
+    save_receipt(updated_receipt)
+
+    await update.message.reply_text(
+        "✅ Sincronización completada.\n"
+        f"🧾 Boleta: `{normalized_receipt_number}`",
+        parse_mode="Markdown",
+    )
 
 
 async def cmd_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

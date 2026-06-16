@@ -15,6 +15,7 @@ from handlers.telegram_handler import (
     cmd_mes,
     cmd_recibo,
     cmd_restaurante,
+    cmd_sync,
     cmd_start,
     handle_text_message,
 )
@@ -114,6 +115,7 @@ _application.add_handler(CommandHandler("global", cmd_global))
 _application.add_handler(CommandHandler("excel", cmd_excel))
 _application.add_handler(CommandHandler("restaurante", cmd_restaurante))
 _application.add_handler(CommandHandler("recibo", cmd_recibo))
+_application.add_handler(CommandHandler("sync", cmd_sync))
 _application.add_handler(CommandHandler("eliminar", cmd_delete))
 
 # Register photo handler — fires for messages that contain photos
