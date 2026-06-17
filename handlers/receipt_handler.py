@@ -102,6 +102,15 @@ def _format_invalid_ruc_message(receipt_id: str) -> str:
     )
 
 
+def _format_missing_emission_date_message(receipt_id: str) -> str:
+    logger.info("_format_missing_emission_date_message: receipt_id=%s", receipt_id[:8])
+    return (
+        f"⚠️ No pude extraer la fecha de emisión del recibo `{receipt_id[:8]}`.\n"
+        "No lo guardaré sin fecha de emisión.\n"
+        "Vuelve a tomar la foto con mejor enfoque e iluminación y envíala otra vez."
+    )
+
+
 async def handle_photo_message(message: Message) -> None:
     """
     Entry point called for each Telegram message containing photos.
@@ -157,7 +166,6 @@ async def _process_receipt(receipt: Receipt, photo: PhotoSize, chat_id: int) -> 
     Background task: download photo → extract data via OpenAI vision → validate DNI → save.
     Sends a follow-up Telegram message with results or error.
     """
-    date_str = receipt.created_at.strftime("%Y-%m-%d")
     logger.info(
         "_process_receipt: start receipt_id=%s chat_id=%s file_id=%s",
         receipt.id,
@@ -193,6 +201,11 @@ async def _process_receipt(receipt: Receipt, photo: PhotoSize, chat_id: int) -> 
                     extraction_data.electronic_receipt_number,
                 )
                 extraction_data.electronic_receipt_number = None
+
+        if extraction_data.emission_date is None:
+            logger.info("_process_receipt: missing emission_date; skipping storage receipt_id=%s", receipt.id)
+            await send_message(chat_id, _format_missing_emission_date_message(receipt.id))
+            return
 
         if not extraction_data.ruc or not await ruc_validator.validate_ruc(extraction_data.ruc):
             logger.info("_process_receipt: invalid or missing ruc; skipping storage receipt_id=%s", receipt.id)
@@ -244,6 +257,7 @@ async def _process_receipt(receipt: Receipt, photo: PhotoSize, chat_id: int) -> 
             return
 
         # 4. Save photo locally only after confirming the receipt is new
+        date_str = extraction_data.emission_date.isoformat()
         photo_hash = hashlib.sha256(photo_bytes).hexdigest()
         photo_path: Path = save_photo(receipt.id, date_str, photo_bytes)
         receipt.photo = ReceiptPhoto(

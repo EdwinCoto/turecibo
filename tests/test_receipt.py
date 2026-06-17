@@ -10,6 +10,8 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from services import vision
 from handlers.receipt_handler import (
+    _format_missing_emission_date_message,
+    _process_receipt,
     _format_duplicate_message,
     _format_invalid_ruc_message,
     _format_missing_dni_message,
@@ -66,6 +68,7 @@ from services.electronic_receipt_validator import is_valid_format as is_valid_el
 from services.electronic_receipt_validator import validate_electronic_receipt_number
 from services.ruc_validator import is_valid_format as is_valid_ruc_format
 from services.ruc_validator import validate_ruc
+from storage import azure_backend
 
 
 @pytest.mark.parametrize("dni,expected", [
@@ -118,6 +121,14 @@ def test_ruc_format(ruc, expected):
 ])
 def test_validate_ruc_uses_local_format_only(ruc, expected):
     assert asyncio.run(validate_ruc(ruc)) is expected
+
+
+def test_azure_receipt_date_str_prefers_extraction_emission_date():
+    r = Receipt(source=make_source())
+    r.receipt_date = None
+    r.extraction.data = ExtractionData(emission_date=date(2026, 6, 8))
+
+    assert azure_backend._receipt_date_str(r) == "2026-06-08"
 
 
 @pytest.mark.parametrize("receipt_number,expected", [
@@ -651,6 +662,56 @@ def test_format_invalid_ruc_message_mentions_not_saved():
 
     assert "RUC" in message
     assert "No lo guardaré" in message
+
+
+def test_format_missing_emission_date_message_mentions_not_saved():
+    message = _format_missing_emission_date_message("8abaac29-e5a5-42ca-8a6f-375ad5fd6156")
+
+    assert "fecha de emisión" in message
+    assert "No lo guardaré" in message
+    assert "Vuelve a tomar la foto" in message
+
+
+def test_process_receipt_skips_save_when_emission_date_missing(monkeypatch):
+    receipt = Receipt(source=make_source())
+    photo = cast(object, SimpleNamespace(file_id="photo-file-1", file_unique_id="u1", file_size=100))
+
+    download_file = SimpleNamespace(download_as_bytearray=AsyncMock(return_value=bytearray(b"fake-image")))
+    bot = SimpleNamespace(get_file=AsyncMock(return_value=download_file))
+
+    send_message_mock = AsyncMock()
+    save_counts = {"photo": 0, "receipt": 0}
+
+    monkeypatch.setattr("handlers.receipt_handler.get_bot", lambda: bot)
+    monkeypatch.setattr(
+        "handlers.receipt_handler.vision.extract_receipt_data",
+        AsyncMock(
+            return_value=ExtractionData(
+                ruc="20613724851",
+                dni="12345678",
+                emission_date=None,
+            )
+        ),
+    )
+    monkeypatch.setattr("handlers.receipt_handler.send_message", send_message_mock)
+    monkeypatch.setattr(
+        "handlers.receipt_handler.save_photo",
+        lambda *_args, **_kwargs: save_counts.__setitem__("photo", save_counts["photo"] + 1),
+    )
+    monkeypatch.setattr(
+        "handlers.receipt_handler.save_receipt",
+        lambda *_args, **_kwargs: save_counts.__setitem__("receipt", save_counts["receipt"] + 1),
+    )
+
+    asyncio.run(_process_receipt(receipt, cast(object, photo), chat_id=1))
+
+    send_message_mock.assert_awaited_once()
+    msg_args = send_message_mock.await_args.args
+    assert msg_args[0] == 1
+    assert "No pude extraer la fecha de emisión" in msg_args[1]
+
+    assert save_counts["photo"] == 0
+    assert save_counts["receipt"] == 0
 
 
 def test_month_name_es_uses_spanish_labels():

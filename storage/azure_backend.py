@@ -128,7 +128,11 @@ def _iter_receipts(name_prefix: str | None = None) -> list[dict]:
 
 
 def _receipt_date_str(receipt: Receipt) -> str:
-    return (receipt.receipt_date or receipt.created_at.date()).strftime("%Y-%m-%d")
+    if receipt.receipt_date is not None:
+        return receipt.receipt_date.strftime("%Y-%m-%d")
+    if receipt.extraction and receipt.extraction.data and receipt.extraction.data.emission_date is not None:
+        return receipt.extraction.data.emission_date.strftime("%Y-%m-%d")
+    return receipt.created_at.date().strftime("%Y-%m-%d")
 
 
 def _move_or_upload_photo(target_date: str, receipt_id: str, photo_path: str) -> str:
