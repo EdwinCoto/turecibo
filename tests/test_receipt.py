@@ -2,8 +2,10 @@ import pytest
 import asyncio
 from typing import cast
 from datetime import date
+from io import BytesIO
+from openpyxl import load_workbook
 from models.receipt import ExtractionData, Receipt, ReceiptSource, ReceiptStatus
-from handlers.telegram_handler import _month_name_es, cmd_delete, cmd_excel, cmd_global, cmd_recibo, cmd_sync, handle_text_message
+from handlers.telegram_handler import _build_excel, _month_name_es, cmd_delete, cmd_excel, cmd_global, cmd_recibo, cmd_sync, handle_text_message
 from telegram import Update
 from telegram.ext import ContextTypes
 from services import vision
@@ -387,6 +389,47 @@ def test_cmd_excel_reports_no_data(monkeypatch):
     args, _ = reply_text.await_args
     assert "No hay recibos registrados" in args[0]
     reply_document.assert_not_called()
+
+
+def test_build_excel_skips_unprocessed_or_empty_rows():
+    monthly_data = [
+        (
+            6,
+            [
+                {
+                    "id": "processed-1",
+                    "status": "processed",
+                    "receipt_date": "2026-06-16",
+                    "created_at": "2026-06-17T12:00:00+00:00",
+                    "extraction": {
+                        "data": {
+                            "ruc": "20613724851",
+                            "restaurant_name": "RESTAURANTE UNO S.A.C.",
+                            "electronic_receipt_number": "B130-00274475",
+                            "total_amount": 59.0,
+                            "dni": "12345678",
+                        }
+                    },
+                },
+                {
+                    "id": "pending-1",
+                    "status": "pending",
+                    "created_at": "2026-06-17T12:05:00+00:00",
+                    "extraction": {"data": None},
+                },
+            ],
+        )
+    ]
+
+    excel_file = _build_excel(2026, monthly_data)
+    workbook = load_workbook(BytesIO(excel_file.getvalue()))
+    sheet = workbook["Junio"]
+
+    rows = list(sheet.iter_rows(min_row=2, values_only=True))
+    assert len(rows) == 1
+    assert rows[0][0] == "20613724851"
+    assert rows[0][2] == "B130-00274475"
+    assert rows[0][3] == "2026-06-16"
 
 
 def test_cmd_delete_requires_receipt_id_argument():

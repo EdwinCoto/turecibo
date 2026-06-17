@@ -269,7 +269,13 @@ def _build_excel(year: int, monthly_data: list[tuple[int, list[dict]]]) -> Bytes
         )
 
         for receipt in sorted_receipts:
+            if receipt.get("status") != "processed":
+                continue
+
             data = (receipt.get("extraction") or {}).get("data") or {}
+            if not data:
+                continue
+
             receipt_date = receipt.get("receipt_date") or receipt.get("created_at", "")[:10]
             sheet.append(
                 [
