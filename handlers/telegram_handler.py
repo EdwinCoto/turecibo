@@ -249,7 +249,14 @@ def _build_excel(year: int, monthly_data: list[tuple[int, list[dict]]]) -> Bytes
     # Remove default empty sheet.
     workbook.remove(workbook.active)
 
-    headers = ["RUC", "NOMBRE DEL COMERCIO O RESTAURANTE", "FECHA", "MONTO", "DNI"]
+    headers = [
+        "RUC",
+        "NOMBRE DEL COMERCIO O RESTAURANTE",
+        "NRO BOLETA ELECTRONICA",
+        "FECHA",
+        "MONTO",
+        "DNI",
+    ]
 
     for month_number, receipts in monthly_data:
         sheet_name = _month_name_es(month_number)[:31]
@@ -268,6 +275,7 @@ def _build_excel(year: int, monthly_data: list[tuple[int, list[dict]]]) -> Bytes
                 [
                     data.get("ruc") or "",
                     data.get("restaurant_name") or "",
+                    data.get("electronic_receipt_number") or "",
                     receipt_date,
                     data.get("total_amount") if data.get("total_amount") is not None else "",
                     data.get("dni") or "",
