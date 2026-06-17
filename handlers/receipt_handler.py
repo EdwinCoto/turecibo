@@ -16,7 +16,7 @@ from models.receipt import (
 )
 from services import dni_validator, electronic_receipt_validator, ruc_validator, vision
 from services.telegram_client import get_bot, send_message
-from storage.local_store import (
+from storage.receipt_store import (
     build_receipt_fingerprint,
     get_receipt_by_fingerprint,
     save_photo,

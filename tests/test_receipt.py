@@ -153,71 +153,71 @@ from unittest.mock import patch
 from unittest.mock import AsyncMock
 from types import SimpleNamespace
 
-from storage import local_store
+from storage import receipt_store, local_backend
 
 
 def test_save_and_load_receipt(tmp_path):
-    with patch.object(local_store, "BASE_PATH", tmp_path):
+    with patch.object(local_backend, "BASE_PATH", tmp_path):
         r = Receipt(source=make_source())
-        path = local_store.save_receipt(r)
+        path = receipt_store.save_receipt(r)
         assert path.exists()
         loaded = json.loads(path.read_text())
         assert loaded["id"] == r.id
 
 
 def test_get_receipts_by_month_empty(tmp_path):
-    with patch.object(local_store, "BASE_PATH", tmp_path):
-        result = local_store.get_receipts_by_month("2024-01")
+    with patch.object(local_backend, "BASE_PATH", tmp_path):
+        result = receipt_store.get_receipts_by_month("2024-01")
         assert result == []
 
 
 def test_get_receipts_by_month(tmp_path):
-    with patch.object(local_store, "BASE_PATH", tmp_path):
+    with patch.object(local_backend, "BASE_PATH", tmp_path):
         r = Receipt(source=make_source())
-        local_store.save_receipt(r)
+        receipt_store.save_receipt(r)
         month = r.created_at.strftime("%Y-%m")
-        results = local_store.get_receipts_by_month(month)
+        results = receipt_store.get_receipts_by_month(month)
         assert len(results) == 1
         assert results[0]["id"] == r.id
 
 
 def test_get_receipt_by_id(tmp_path):
-    with patch.object(local_store, "BASE_PATH", tmp_path):
+    with patch.object(local_backend, "BASE_PATH", tmp_path):
         r = Receipt(source=make_source())
-        local_store.save_receipt(r)
-        found = local_store.get_receipt_by_id(r.id[:8])
+        receipt_store.save_receipt(r)
+        found = receipt_store.get_receipt_by_id(r.id[:8])
         assert found is not None
         assert found["id"] == r.id
 
 
 def test_get_receipt_by_telegram_file_id(tmp_path):
-    with patch.object(local_store, "BASE_PATH", tmp_path):
+    with patch.object(local_backend, "BASE_PATH", tmp_path):
         r = Receipt(source=make_source(telegram_file_id="file-123"))
-        local_store.save_receipt(r)
-        found = local_store.get_receipt_by_telegram_file_id("file-123")
+        receipt_store.save_receipt(r)
+        found = receipt_store.get_receipt_by_telegram_file_id("file-123")
         assert found is not None
         assert found["source"]["telegram_file_id"] == "file-123"
 
 
 def test_get_receipt_by_telegram_photo_identity_prefers_unique_id(tmp_path):
-    with patch.object(local_store, "BASE_PATH", tmp_path):
+    with patch.object(local_backend, "BASE_PATH", tmp_path):
         r = Receipt(source=make_source(telegram_file_id="file-123", telegram_file_unique_id="unique-abc"))
-        local_store.save_receipt(r)
-        found = local_store.get_receipt_by_telegram_photo_identity("unique-abc", "file-999")
+        receipt_store.save_receipt(r)
+        found = receipt_store.get_receipt_by_telegram_photo_identity("unique-abc", "file-999")
         assert found is not None
         assert found["source"]["telegram_file_unique_id"] == "unique-abc"
 
 
 def test_get_receipt_by_photo_hash(tmp_path):
-    with patch.object(local_store, "BASE_PATH", tmp_path):
+    with patch.object(local_backend, "BASE_PATH", tmp_path):
         r = Receipt(source=make_source())
         r.photo = __import__("models.receipt", fromlist=["ReceiptPhoto"]).ReceiptPhoto(
             local_path=str(tmp_path / "dummy.jpg"),
             size_bytes=11,
             content_hash="abc123",
         )
-        local_store.save_receipt(r)
-        found = local_store.get_receipt_by_photo_hash("abc123")
+        receipt_store.save_receipt(r)
+        found = receipt_store.get_receipt_by_photo_hash("abc123")
         assert found is not None
         assert found["photo"]["content_hash"] == "abc123"
 
@@ -236,24 +236,24 @@ def test_build_receipt_fingerprint_is_stable(tmp_path):
             }
         },
     }
-    fingerprint_1 = local_store.build_receipt_fingerprint(receipt)
-    fingerprint_2 = local_store.build_receipt_fingerprint(receipt)
+    fingerprint_1 = receipt_store.build_receipt_fingerprint(receipt)
+    fingerprint_2 = receipt_store.build_receipt_fingerprint(receipt)
     assert fingerprint_1 == fingerprint_2
 
 
 def test_get_receipt_by_fingerprint(tmp_path):
-    with patch.object(local_store, "BASE_PATH", tmp_path):
+    with patch.object(local_backend, "BASE_PATH", tmp_path):
         r = Receipt(source=make_source())
         r.receipt_date = date(2026, 6, 8)
         r.receipt_fingerprint = "fp-123"
-        local_store.save_receipt(r)
-        found = local_store.get_receipt_by_fingerprint("fp-123")
+        receipt_store.save_receipt(r)
+        found = receipt_store.get_receipt_by_fingerprint("fp-123")
         assert found is not None
         assert found["receipt_fingerprint"] == "fp-123"
 
 
 def test_get_receipt_by_fingerprint_matches_recomputed_when_stored_is_legacy(tmp_path):
-    with patch.object(local_store, "BASE_PATH", tmp_path):
+    with patch.object(local_backend, "BASE_PATH", tmp_path):
         r = Receipt(source=make_source())
         r.receipt_date = date(2026, 5, 3)
         r.extraction.data = ExtractionData(
@@ -264,27 +264,27 @@ def test_get_receipt_by_fingerprint_matches_recomputed_when_stored_is_legacy(tmp
             dni_valid=True,
         )
         r.receipt_fingerprint = "legacy-fingerprint"
-        local_store.save_receipt(r)
+        receipt_store.save_receipt(r)
 
-        expected = local_store.build_receipt_fingerprint(r.to_json_dict())
-        found = local_store.get_receipt_by_fingerprint(expected)
+        expected = receipt_store.build_receipt_fingerprint(r.to_json_dict())
+        found = receipt_store.get_receipt_by_fingerprint(expected)
 
         assert found is not None
         assert found["id"] == r.id
 
 
 def test_save_receipt_moves_to_emission_date_directory(tmp_path):
-    with patch.object(local_store, "BASE_PATH", tmp_path):
+    with patch.object(local_backend, "BASE_PATH", tmp_path):
         r = Receipt(source=make_source())
-        first_path = local_store.save_receipt(r)
-        photo_path = local_store.save_photo(r.id, r.created_at.strftime("%Y-%m-%d"), b"photo-bytes")
+        first_path = receipt_store.save_receipt(r)
+        photo_path = receipt_store.save_photo(r.id, r.created_at.strftime("%Y-%m-%d"), b"photo-bytes")
         r.photo = __import__("models.receipt", fromlist=["ReceiptPhoto"]).ReceiptPhoto(
             local_path=str(photo_path),
             size_bytes=len(b"photo-bytes"),
         )
         r.receipt_date = date(2026, 6, 8)
 
-        second_path = local_store.save_receipt(r)
+        second_path = receipt_store.save_receipt(r)
 
         assert first_path.parent.name == r.created_at.strftime("%Y-%m-%d")
         assert second_path.parent.name == "2026-06-08"
@@ -295,19 +295,19 @@ def test_save_receipt_moves_to_emission_date_directory(tmp_path):
 
 
 def test_delete_receipt_by_id_removes_json_and_photo(tmp_path):
-    with patch.object(local_store, "BASE_PATH", tmp_path):
+    with patch.object(local_backend, "BASE_PATH", tmp_path):
         r = Receipt(source=make_source())
-        photo_path = local_store.save_photo(r.id, r.created_at.strftime("%Y-%m-%d"), b"photo-bytes")
+        photo_path = receipt_store.save_photo(r.id, r.created_at.strftime("%Y-%m-%d"), b"photo-bytes")
         r.photo = __import__("models.receipt", fromlist=["ReceiptPhoto"]).ReceiptPhoto(
             local_path=str(photo_path),
             size_bytes=len(b"photo-bytes"),
         )
-        json_path = local_store.save_receipt(r)
+        json_path = receipt_store.save_receipt(r)
 
         assert json_path.exists()
         assert Path(r.photo.local_path).exists()
 
-        deleted = local_store.delete_receipt_by_id(r.id[:8])
+        deleted = receipt_store.delete_receipt_by_id(r.id[:8])
 
         assert deleted is True
         assert not json_path.exists()
@@ -315,8 +315,8 @@ def test_delete_receipt_by_id_removes_json_and_photo(tmp_path):
 
 
 def test_delete_receipt_by_id_returns_false_when_not_found(tmp_path):
-    with patch.object(local_store, "BASE_PATH", tmp_path):
-        assert local_store.delete_receipt_by_id("nope1234") is False
+    with patch.object(local_backend, "BASE_PATH", tmp_path):
+        assert receipt_store.delete_receipt_by_id("nope1234") is False
 
 
 def test_normalize_emission_date_value_from_common_formats():

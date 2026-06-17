@@ -12,7 +12,7 @@ from telegram.ext import ContextTypes
 from models.receipt import Receipt
 from services import electronic_receipt_validator, vision
 
-from storage.local_store import (
+from storage.receipt_store import (
     delete_receipt_by_id,
     get_photo_bytes,
     get_receipt_by_id,
