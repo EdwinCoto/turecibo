@@ -103,6 +103,24 @@ def get_receipts_by_month(month: str) -> list[dict]:
     return results
 
 
+def get_receipts_by_year(year: str) -> list[dict]:
+    results: list[dict] = []
+    base = get_base_path()
+    if not base.exists():
+        return results
+    for day_dir in sorted(base.iterdir()):
+        if not day_dir.is_dir():
+            continue
+        if not day_dir.name.startswith(f"{year}-"):
+            continue
+        for json_file in sorted(day_dir.glob("*.json")):
+            try:
+                results.append(load_receipt(json_file))
+            except Exception:
+                logger.exception("Failed to load receipt file: %s", json_file)
+    return results
+
+
 def get_receipts_by_ruc(ruc: str) -> list[dict]:
     results: list[dict] = []
     base = get_base_path()

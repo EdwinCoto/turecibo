@@ -48,7 +48,22 @@ jobs:
           rm -f local.settings.json
 
       - name: Zip artifact for deployment
-        run: zip -r release.zip . -x "venv/*" -x ".git/*" -x ".github/*" -x "tests/*" -x "data/*" -x "local.settings.json" -x "__pycache__/*" -x "*.pyc"
+        run: |
+          zip -r release.zip . \
+            -x "venv/*" \
+            -x ".git/*" \
+            -x ".github/*" \
+            -x "tests/*" \
+            -x "data/*" \
+            -x "local.settings.json" \
+            -x "__pycache__/*" \
+            -x "*.pyc" \
+            -x "*service-principal*.json" \
+            -x "*service-account*.json" \
+            -x "oauth-client*.json" \
+            -x "google-oauth*.json" \
+            -x "google_drive_token.json" \
+            -x "google_oauth_token.json"
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
