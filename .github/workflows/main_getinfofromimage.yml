@@ -16,7 +16,35 @@ env:
   PYTHON_PACKAGE_DIR: '.python_packages/lib/site-packages'
 
 jobs:
-  build:
+
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python version
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Create and start virtual environment
+        run: |
+          python -m venv venv
+
+      - name: Install dependencies
+        run: |
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Add your test commands here, for example:
+      - name: Run tests
+        run: |
+           source venv/bin/activate
+           pytest tests/
+  package:
     runs-on: ubuntu-latest
     permissions:
       contents: read #This is required for actions/checkout
@@ -72,7 +100,6 @@ jobs:
           path: |
             release.zip
             !venv/
-
   deploy:
     runs-on: ubuntu-latest
     needs: build
