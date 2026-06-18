@@ -40,6 +40,7 @@ source .venv/bin/activate
 
 ```bash
 pip install -r requirements.txt
+pip install pytest
 ```
 
 3. Create local runtime settings
@@ -116,13 +117,13 @@ You should see the HTTP route:
 Run full test suite:
 
 ```bash
-pytest
+python -m pytest
 ```
 
 Run receipt-focused tests only:
 
 ```bash
-pytest tests/test_receipt.py -q
+python -m pytest tests/test_receipt.py -q
 ```
 
 ## Storage backends
