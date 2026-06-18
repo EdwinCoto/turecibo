@@ -210,4 +210,12 @@ data/
 # OS
 .DS_Store
 Thumbs.db
-scripts/set_webhook.py
+
+# Google credentials/tokens (service account + OAuth)
+service-principal.json
+*service-principal*.json
+*service-account*.json
+oauth-client*.json
+google-oauth*.json
+google_drive_token.json
+google_oauth_token.json

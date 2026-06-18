@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "❌ gitleaks is required for pre-commit secret scanning."
+  echo "Install with:"
+  echo "  brew install gitleaks"
+  echo "or"
+  echo "  go install github.com/gitleaks/gitleaks/v8@latest"
+  exit 1
+fi
+
+STAGED_FILES="$(git diff --cached --name-only --diff-filter=ACM)"
+if [ -z "${STAGED_FILES}" ]; then
+  exit 0
+fi
+
+TMP_DIR="$(mktemp -d)"
+cleanup() {
+  rm -rf "${TMP_DIR}"
+}
+trap cleanup EXIT
+
+while IFS= read -r file; do
+  [ -z "${file}" ] && continue
+  mkdir -p "${TMP_DIR}/$(dirname "${file}")"
+  git show ":${file}" > "${TMP_DIR}/${file}"
+done <<< "${STAGED_FILES}"
+
+echo "🔎 Running secret scan on staged files..."
+gitleaks detect --source "${TMP_DIR}" --no-git --redact
+echo "✅ Secret scan passed."

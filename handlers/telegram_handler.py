@@ -17,6 +17,7 @@ from storage.receipt_store import (
     get_photo_bytes,
     get_receipt_by_id,
     get_receipts_by_month,
+    get_receipts_by_year,
     get_receipts_by_ruc,
     save_receipt,
 )
@@ -196,18 +197,23 @@ async def cmd_global(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         )
         return
 
-    monthly_data: list[tuple[int, list[dict]]] = []
-    total_receipts = 0
-    for month_number in range(1, 13):
-        month_key = f"{year}-{month_number:02d}"
-        receipts = [
-            receipt
-            for receipt in get_receipts_by_month(month_key)
-            if receipt.get("status") == "processed"
-        ]
-        if receipts:
-            monthly_data.append((month_number, receipts))
-            total_receipts += len(receipts)
+    monthly_map: dict[int, list[dict]] = {}
+    for receipt in get_receipts_by_year(str(year)):
+        if receipt.get("status") != "processed":
+            continue
+        receipt_date = receipt.get("receipt_date") or receipt.get("created_at", "")[:10]
+        if not receipt_date.startswith(f"{year}-"):
+            continue
+        try:
+            month_number = int(receipt_date[5:7])
+        except (ValueError, TypeError):
+            continue
+        if month_number < 1 or month_number > 12:
+            continue
+        monthly_map.setdefault(month_number, []).append(receipt)
+
+    monthly_data: list[tuple[int, list[dict]]] = sorted(monthly_map.items())
+    total_receipts = sum(len(receipts) for _, receipts in monthly_data)
 
     logger.info("cmd_global: year=%d months_with_data=%d receipts_found=%d", year, len(monthly_data), total_receipts)
 
@@ -317,14 +323,21 @@ async def cmd_excel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
 
-    monthly_data: list[tuple[int, list[dict]]] = []
-    total_receipts = 0
-    for month_number in range(1, 13):
-        month_key = f"{year}-{month_number:02d}"
-        receipts = get_receipts_by_month(month_key)
-        if receipts:
-            monthly_data.append((month_number, receipts))
-            total_receipts += len(receipts)
+    monthly_map: dict[int, list[dict]] = {}
+    for receipt in get_receipts_by_year(str(year)):
+        receipt_date = receipt.get("receipt_date") or receipt.get("created_at", "")[:10]
+        if not receipt_date.startswith(f"{year}-"):
+            continue
+        try:
+            month_number = int(receipt_date[5:7])
+        except (ValueError, TypeError):
+            continue
+        if month_number < 1 or month_number > 12:
+            continue
+        monthly_map.setdefault(month_number, []).append(receipt)
+
+    monthly_data: list[tuple[int, list[dict]]] = sorted(monthly_map.items())
+    total_receipts = sum(len(receipts) for _, receipts in monthly_data)
 
     logger.info("cmd_excel: year=%d months_with_data=%d receipts_found=%d", year, len(monthly_data), total_receipts)
 

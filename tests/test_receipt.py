@@ -68,7 +68,7 @@ from services.electronic_receipt_validator import is_valid_format as is_valid_el
 from services.electronic_receipt_validator import validate_electronic_receipt_number
 from services.ruc_validator import is_valid_format as is_valid_ruc_format
 from services.ruc_validator import validate_ruc
-from storage import azure_backend
+from storage import azure_backend, google_drive_backend
 
 
 @pytest.mark.parametrize("dni,expected", [
@@ -194,6 +194,16 @@ def test_get_receipts_by_month(tmp_path):
         assert results[0]["id"] == r.id
 
 
+def test_get_receipts_by_year(tmp_path):
+    with patch.object(local_backend, "BASE_PATH", tmp_path):
+        r = Receipt(source=make_source())
+        receipt_store.save_receipt(r)
+        year = r.created_at.strftime("%Y")
+        results = receipt_store.get_receipts_by_year(year)
+        assert len(results) == 1
+        assert results[0]["id"] == r.id
+
+
 def test_get_receipt_by_id(tmp_path):
     with patch.object(local_backend, "BASE_PATH", tmp_path):
         r = Receipt(source=make_source())
@@ -286,6 +296,25 @@ def test_get_receipt_by_fingerprint_matches_recomputed_when_stored_is_legacy(tmp
         assert found["id"] == r.id
 
 
+def test_parse_gdrive_uri_accepts_both_slash_formats():
+    assert google_drive_backend.parse_gdrive_uri("gdrive://photos/2026-06-08/file-123") == (
+        "photos",
+        "2026-06-08",
+        "file-123",
+    )
+    assert google_drive_backend.parse_gdrive_uri("gdrive:/photos/2026-06-08/file-123") == (
+        "photos",
+        "2026-06-08",
+        "file-123",
+    )
+
+
+def test_move_or_upload_photo_keeps_existing_gdrive_uri():
+    uri = "gdrive://photos/2026-06-08/file-123"
+    result = google_drive_backend._move_or_upload_photo("2026-06-09", "receipt-1", uri)
+    assert result == uri
+
+
 def test_save_receipt_moves_to_emission_date_directory(tmp_path):
     with patch.object(local_backend, "BASE_PATH", tmp_path):
         r = Receipt(source=make_source())
@@ -305,6 +334,31 @@ def test_save_receipt_moves_to_emission_date_directory(tmp_path):
         assert r.photo is not None
         assert r.photo.local_path.endswith("2026-06-08/%s.jpg" % r.id)
         assert r.photo.content_hash is None
+
+
+def test_save_receipt_routes_to_google_drive_backend(monkeypatch):
+    r = Receipt(source=make_source())
+    monkeypatch.setenv("STORAGE_BACKEND", "google_drive")
+
+    called = {"count": 0}
+
+    def _fake_save_receipt(_receipt):
+        called["count"] += 1
+        return Path("gdrive://receipts/2026-06-08/file-123")
+
+    monkeypatch.setattr(receipt_store.google_drive_backend, "save_receipt", _fake_save_receipt)
+
+    result = receipt_store.save_receipt(r)
+
+    assert called["count"] == 1
+    assert str(result).startswith("gdrive:")
+
+
+def test_get_photo_bytes_routes_gdrive_uris(monkeypatch):
+    monkeypatch.setattr(receipt_store.google_drive_backend, "get_photo_bytes", lambda _path: b"photo-bytes")
+
+    assert receipt_store.get_photo_bytes("gdrive://photos/2026-06-08/file-123") == b"photo-bytes"
+    assert receipt_store.get_photo_bytes("gdrive:/photos/2026-06-08/file-123") == b"photo-bytes"
 
 
 def test_delete_receipt_by_id_removes_json_and_photo(tmp_path):
@@ -392,7 +446,7 @@ def test_cmd_excel_reports_no_data(monkeypatch):
     )
     context = cast(ContextTypes.DEFAULT_TYPE, SimpleNamespace(args=["2026"]))
 
-    monkeypatch.setattr("handlers.telegram_handler.get_receipts_by_month", lambda _month: [])
+    monkeypatch.setattr("handlers.telegram_handler.get_receipts_by_year", lambda _year: [])
 
     asyncio.run(cmd_excel(update, context))
 

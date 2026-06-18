@@ -192,6 +192,10 @@ def get_receipts_by_month(month: str) -> list[dict]:
     return _iter_receipts(name_prefix=f"{_receipts_prefix()}/{month}")
 
 
+def get_receipts_by_year(year: str) -> list[dict]:
+    return _iter_receipts(name_prefix=f"{_receipts_prefix()}/{year}-")
+
+
 def get_receipts_by_ruc(ruc: str) -> list[dict]:
     results = []
     for receipt in _iter_receipts():

@@ -24,6 +24,10 @@
     "AZURE_STORAGE_CONNECTION_STRING": "<optional-when-using-azure-backend>",
     "AZURE_STORAGE_CONTAINER": "turecibo-receipts",
     "AZURE_RECEIPTS_PREFIX": "receipts",
-    "AZURE_PHOTOS_PREFIX": "photos"
+    "AZURE_PHOTOS_PREFIX": "photos",
+    "GOOGLE_DRIVE_CREDENTIALS_FILE": "<required-when-using-google-drive-backend>",
+    "GOOGLE_DRIVE_ROOT_FOLDER_ID": "root",
+    "GOOGLE_DRIVE_RECEIPTS_FOLDER": "receipts",
+    "GOOGLE_DRIVE_PHOTOS_FOLDER": "photos"
   }
 }

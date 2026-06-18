@@ -131,6 +131,7 @@ Controlled by STORAGE_BACKEND in local.settings.json.
 
 - local: saves under data/receipts
 - azure: saves to Azure Blob Storage
+- google_drive: saves to Google Drive folders
 
 For Azure backend, configure:
 
@@ -138,6 +139,57 @@ For Azure backend, configure:
 - AZURE_STORAGE_CONTAINER
 - AZURE_RECEIPTS_PREFIX
 - AZURE_PHOTOS_PREFIX
+
+### Google Drive OAuth setup (recommended for personal Drive)
+
+1. Create OAuth client JSON in Google Cloud:
+   - Open `console.cloud.google.com`
+   - Go to **APIs & Services → Credentials**
+   - Click **+ Create Credentials → OAuth client ID**
+   - Choose **Desktop app**
+   - Download the JSON file (example: `oauth-client.json`)
+
+2. Configure `local.settings.json`:
+
+```json
+"STORAGE_BACKEND": "google_drive",
+"GOOGLE_DRIVE_CREDENTIALS_FILE": "/absolute/path/to/oauth-client.json",
+"GOOGLE_DRIVE_TOKEN_FILE": "google_drive_token.json",
+"GOOGLE_DRIVE_ROOT_FOLDER_ID": "<google-drive-folder-id>",
+"GOOGLE_DRIVE_RECEIPTS_FOLDER": "receipts",
+"GOOGLE_DRIVE_PHOTOS_FOLDER": "photos"
+```
+
+3. Generate the OAuth token (one-time):
+
+```bash
+python scripts/generate_google_drive_token.py
+```
+
+This opens a browser for Google consent and creates `google_drive_token.json`.
+After token generation, the bot can upload files to your Drive folder.
+
+## Secret scanning (prevent leaked credentials)
+
+**GitHub CI (mandatory enforcement):** Secrets are scanned on every push via `.github/workflows/secret-scan.yml` (Gitleaks). PRs with detected secrets **cannot merge to main** — this is the enforcement boundary and cannot be bypassed locally.
+
+**Local detection (convenience):** Pre-commit hooks catch mistakes before they are staged, and a manual scan script is available:
+
+Run local scan before committing:
+
+```bash
+scripts/scan_secrets.sh
+```
+
+Enable pre-commit secret scanning for staged files:
+
+```bash
+scripts/install_git_hooks.sh
+```
+
+Note: Pre-commit hooks can be bypassed (`git commit --no-verify`), so the CI workflow on GitHub's servers is the actual blocker. The hook is convenience only.
+
+**Deployment safety:** The Azure Functions deployment pipeline also excludes common credential/token files (`.env`, `credentials.json`, etc.) even if they exist locally.
 
 ## Bot commands
 
@@ -185,4 +237,6 @@ For Azure backend, configure:
 - storage/receipt_store.py: storage facade
 - storage/local_backend.py: local filesystem storage
 - storage/azure_backend.py: Azure Blob storage
+- storage/google_drive_backend.py: Google Drive storage
 - scripts/set_webhook.py: webhook registration script
+- scripts/generate_google_drive_token.py: Google Drive OAuth token generation
